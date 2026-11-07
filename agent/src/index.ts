@@ -190,7 +190,7 @@ if (fresh) {
     // these calls must answer in JSON, not go read files.
     const r = await gatewayChat(
       { model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
-      { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "" },
+      { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
     );
     usage.push(r.record);
     return { content: String(r.message.content ?? ""), tokens: r.usage.total_tokens ?? 0, requestId: r.requestId };
