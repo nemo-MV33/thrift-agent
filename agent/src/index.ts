@@ -3,11 +3,19 @@
 // leaves running them to us, so this is where risky calls get confirmed.
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildContext, compactHistory, type Message, type ToolCall } from "./context.js";
 
 const GATEWAY = process.env.BIFROST_URL ?? "http://localhost:8080";
 const args = process.argv.slice(2);
 const isPrivate = args.includes("--private");
 const autoYes = args.includes("--yes");
+// --naive is the baseline for the benchmark: one strong model, no repo
+// context up front, full history every step.
+const naive = args.includes("--naive");
+const asJson = args.includes("--json");
+const workspace = path.resolve(process.env.THRIFT_WORKSPACE ?? fileURLToPath(new URL("../../sandbox/demo-app", import.meta.url)));
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
 
 if (!task) {
@@ -16,14 +24,12 @@ if (!task) {
 }
 
 const vk = isPrivate ? process.env.THRIFT_VK_PRIVATE : process.env.THRIFT_VK_DEV;
-const model = isPrivate ? "ollama/qwen2.5-coder:1.5b" : "groq/openai/gpt-oss-120b";
-const fallbacks = isPrivate ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:1.5b"];
+const model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
+const fallbacks = isPrivate ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
 
 // Tools that change something on disk or run code need a yes from the user.
 const RISKY = new Set(["write_file", "run_command"]);
 
-type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
-type Message = { role: string; content: string | null; tool_calls?: ToolCall[]; tool_call_id?: string };
 
 const headers = { "Content-Type": "application/json", "x-bf-vk": vk ?? "" };
 const rl = createInterface({ input: stdin, output: stdout });
@@ -104,23 +110,73 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
   return answer.trim().toLowerCase().startsWith("y");
 }
 
+const SYSTEM = naive
+  ? "You are a coding agent working inside a small repository. Use the tools to look at files, " +
+    "make the change, then run the tests. Paths are relative to the repo root. Keep answers short."
+  : "Coding agent. The relevant files are already below, don't read them again. " +
+    "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
+
 const messages: Message[] = [
-  {
-    role: "system",
-    content:
-      "You are a coding agent working inside a small repository. Use the tools to look at files, " +
-      "make the change, then run the tests. Paths are relative to the repo root. Keep answers short.",
-  },
+  { role: "system", content: SYSTEM },
+  // Repo context and the task go in separate messages. Bifrost classifies
+  // complexity from the latest user message only, so it sees just the task.
+  ...(naive ? [] : [{ role: "user", content: await buildContext(workspace, task) }]),
   { role: "user", content: task },
 ];
 
+// Small local models often print the tool call as JSON text instead of
+// returning tool_calls. Pick those up so private mode still works.
+function toolCallsFromText(content: string | null, step: number): ToolCall[] {
+  if (!content) return [];
+  const out: ToolCall[] = [];
+  let i = 0;
+  while ((i = content.indexOf("{", i)) !== -1) {
+    // Walk to the matching brace, skipping over string contents, since
+    // write_file arguments are source code full of braces.
+    let depth = 0;
+    let inStr = false;
+    let end = -1;
+    for (let j = i; j < content.length; j++) {
+      const ch = content[j];
+      if (inStr) {
+        if (ch === "\\") j++;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) {
+        end = j;
+        break;
+      }
+    }
+    if (end === -1) break;
+    try {
+      const obj = JSON.parse(content.slice(i, end + 1));
+      if (typeof obj.name === "string" && obj.arguments && typeof obj.arguments === "object") {
+        const name = obj.name.includes("-") ? obj.name : `ws-${obj.name}`;
+        out.push({ id: `text-${step}-${out.length}`, type: "function", function: { name, arguments: JSON.stringify(obj.arguments) } });
+        i = end + 1;
+        continue;
+      }
+    } catch {}
+    i++;
+  }
+  return out;
+}
+
 let tokens = 0;
+let steps = 0;
+const started = Date.now();
 let stopped = false;
 for (let step = 1; step <= 15 && !stopped; step++) {
-  const r = await chat(messages);
+  const r = await chat(naive ? messages : compactHistory(messages));
   tokens += r.usage.total_tokens ?? 0;
+  steps = step;
   const route = `${r.provider}/${r.servedModel}${r.fallback ? " (fallback)" : ""}`;
   console.log(gray(`[step ${step}] ${route}  tokens ${r.usage.total_tokens ?? "?"}`));
+  if (!r.message.tool_calls?.length) {
+    const recovered = toolCallsFromText(r.message.content, step);
+    if (recovered.length) r.message = { role: "assistant", content: null, tool_calls: recovered };
+  }
   messages.push(r.message);
 
   const calls = r.message.tool_calls ?? [];
@@ -142,5 +198,6 @@ for (let step = 1; step <= 15 && !stopped; step++) {
   }
 }
 
-console.log(gray(`\ntotal tokens: ${tokens}`));
+console.log(gray(`\ntotal tokens: ${tokens}, steps: ${steps}`));
+if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, ms: Date.now() - started }));
 rl.close();
