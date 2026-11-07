@@ -146,15 +146,21 @@ function useStore(): Store {
           );
       });
       es.addEventListener("enrich", (m) => {
-        const { runId, requestId, gateway } = JSON.parse((m as MessageEvent).data) as {
+        const { runId, requestId, gateway, missing } = JSON.parse((m as MessageEvent).data) as {
           runId: string;
           requestId: string;
-          gateway: Gateway;
+          gateway?: Gateway;
+          missing?: string;
         };
         setEvents((prev) => {
           const list = prev[runId];
           if (!list) return prev;
-          return { ...prev, [runId]: list.map((e) => (e.type === "step" && e.requestId === requestId ? { ...e, gateway } : e)) };
+          return {
+            ...prev,
+            [runId]: list.map((e) =>
+              e.type === "step" && e.requestId === requestId ? (gateway ? { ...e, gateway, gatewayMissing: undefined } : { ...e, gatewayMissing: missing }) : e,
+            ),
+          };
         });
       });
     };

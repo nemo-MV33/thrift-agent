@@ -19,6 +19,7 @@ type StepView = {
   ms: number | null;
   gateway?: Gateway;
   hasRequest: boolean;
+  missing: string | null;
   firstModel: string | null;
   tools: ToolCall[];
   approvals: Approval[];
@@ -50,6 +51,9 @@ type RunView = {
   lastAt: number;
   stoppedReason: string | null;
 };
+
+const isLocal = (s: { provider: string }) => s.provider.toLowerCase() === "ollama";
+const stepCost = (s: StepView): number | null => (s.gateway?.cost != null ? s.gateway.cost : isLocal(s) ? 0 : null);
 
 const target = (e: Ev) => String(e.path ?? e.command ?? "");
 
@@ -106,6 +110,7 @@ function buildRun(events: Ev[]): RunView {
           ms: e.ms == null ? null : Number(e.ms),
           gateway: e.gateway,
           hasRequest: Boolean(e.requestId),
+          missing: e.gatewayMissing ? String(e.gatewayMissing) : null,
           firstModel,
           tools: [],
           approvals: [],
@@ -116,8 +121,9 @@ function buildRun(events: Ev[]): RunView {
         view.items.push(s);
         view.steps += 1;
         view.tokens += s.prompt + s.completion;
-        if (e.gateway?.cost != null) {
-          view.cost += e.gateway.cost;
+        const c = stepCost(s);
+        if (c != null) {
+          view.cost += c;
           view.costKnown = true;
         }
         break;
@@ -167,13 +173,17 @@ export function LivePage({ store }: { store: Store }) {
 
   return (
     <div className="live">
+      <p className="page-sub">
+        Every model call the coding agent makes: which model the Bifrost gateway picked, why, and what it cost.
+      </p>
       <section className="live-main">
         {!store.serverOnline && runs.length === 0 ? (
-          <Empty title="Event server is not reachable" body="Start it with npm run dev inside dashboard/. The page reconnects on its own." />
+          <Empty title="Event server is not reachable" body="Start it inside dashboard/. The page reconnects on its own." command="cd dashboard && npm run dev" />
         ) : !activeId ? (
           <Empty
             title="No runs yet"
-            body="Start the agent and its events will stream in here. Each step shows the model the gateway picked, why, and what it cost."
+            body="Start the agent and its steps stream in here live."
+            command={'cd agent && npx tsx src/index.ts "Fix the failing test in cart.js"'}
           />
         ) : !run ? (
           <Skeleton />
@@ -182,6 +192,7 @@ export function LivePage({ store }: { store: Store }) {
         )}
       </section>
       <aside className="live-side">
+        <Legend />
         <RunPicker runs={runs} active={activeId} following={picked == null} onPick={(id) => setPicked(id)} onFollow={() => setPicked(null)} />
         <GatewayFeed feed={store.feed} online={store.gatewayOnline} />
       </aside>
@@ -257,17 +268,27 @@ function StoppedBanner({ message }: { message: string }) {
   );
 }
 
-function why(s: StepView): { label: string; detail: string | null } {
+function why(s: StepView): { label: string; detail: string | null; tip: string } {
   const g = s.gateway;
   if (s.fallback || (g && g.fallbackIndex > 0)) {
-    return { label: "Fallback", detail: s.firstModel && s.firstModel !== `${s.provider}/${s.model}` ? `from ${shortModel(s.firstModel)}` : "primary provider failed" };
+    return {
+      label: "Fallback",
+      detail: s.firstModel && s.firstModel !== `${s.provider}/${s.model}` ? `after ${shortModel(s.firstModel)} failed` : "primary provider failed",
+      tip: "The first choice failed, the gateway retried on the next provider in the chain",
+    };
   }
-  if (s.pinned) return { label: "Pinned", detail: "to step 1 model" };
+  if (s.pinned) return { label: "Pinned", detail: "same model as step 1", tip: "Kept on the model routed for step 1 so the run stays consistent" };
   if (g?.complexityTier || g?.routingRule) {
-    return { label: g.complexityTier ? g.complexityTier.toLowerCase() : "routed", detail: g.routingRule ? `rule ${g.routingRule}` : null };
+    return {
+      label: g.complexityTier ? `${g.complexityTier.toLowerCase()} task` : "Routed",
+      detail: g.routingRule ? `rule ${g.routingRule}` : null,
+      tip: "The gateway scored the request and picked the cheapest model for its tier",
+    };
   }
-  if (g) return { label: "Direct", detail: g.virtualKey ? `key ${g.virtualKey}` : null };
-  return { label: "Routing", detail: s.hasRequest ? "waiting for gateway log" : null };
+  if (g) return { label: "Direct", detail: g.virtualKey ? `key ${g.virtualKey}` : null, tip: "Sent straight to this model, no routing rule applied" };
+  if (isLocal(s)) return { label: "Local", detail: "runs on this machine", tip: "Private mode: a local Ollama model, nothing leaves the laptop" };
+  if (s.missing) return { label: "No gateway log", detail: s.missing === "gateway offline" ? "gateway was offline" : null, tip: "The gateway log for this request was not found" };
+  return { label: "Waiting", detail: s.hasRequest ? "for the gateway log" : null, tip: "Routing details arrive from the gateway log a moment after the call" };
 }
 
 const PROVIDERS = ["groq", "gemini", "ollama", "openai", "anthropic", "openrouter"];
@@ -288,9 +309,16 @@ function StepCard({ s, live }: { s: StepView; live: boolean }) {
       </div>
       <div className="model-name">{shortModel(s.model)}</div>
       <div className="step-why">
-        <span className={`why why-${w.label.toLowerCase()}`}>{w.label}</span>
+        <span className="why-label">Why this model</span>
+        <span className={`why why-${w.label.split(" ")[0].toLowerCase()}`} title={w.tip}>
+          {w.label}
+        </span>
         {w.detail && <span className="why-detail">{w.detail}</span>}
-        {s.cacheHit && <span className="badge badge-cache">cache hit</span>}
+        {s.cacheHit && (
+          <span className="badge badge-cache" title="Answered from the semantic cache, no model call">
+            cache hit
+          </span>
+        )}
         {g && g.retries > 0 && <span className="badge">{g.retries} retries</span>}
       </div>
       {live && (
@@ -312,7 +340,7 @@ function StepCard({ s, live }: { s: StepView; live: boolean }) {
         </div>
         <div>
           <dt>cost</dt>
-          <dd>{g ? fmtCost(g.cost) : s.hasRequest ? <span className="shimmer">....</span> : "-"}</dd>
+          <dd>{stepCost(s) != null ? fmtCost(stepCost(s)) : s.missing ? "n/a" : s.hasRequest ? <span className="shimmer">....</span> : "-"}</dd>
         </div>
         <div>
           <dt>latency</dt>
@@ -467,12 +495,53 @@ function GatewayFeed({ feed, online }: { feed: FeedItem[]; online: boolean | nul
   );
 }
 
-export function Empty({ title, body }: { title: string; body: string }) {
+export function Empty({ title, body, command }: { title: string; body: string; command?: string }) {
   return (
     <div className="empty">
       <h2>{title}</h2>
       <p>{body}</p>
+      {command && <code className="cmd">{command}</code>}
     </div>
+  );
+}
+
+function Legend() {
+  return (
+    <section className="panel legend-panel">
+      <header className="panel-head">
+        <h2>How to read a step</h2>
+      </header>
+      <ul className="key">
+        <li>
+          <i className="key-sw prov-groq" />
+          Groq
+        </li>
+        <li>
+          <i className="key-sw prov-gemini" />
+          Gemini
+        </li>
+        <li>
+          <i className="key-sw prov-ollama" />
+          Ollama, local
+        </li>
+        <li>
+          <i className="key-sw key-live" />
+          Running now
+        </li>
+        <li>
+          <span className="why why-fallback">Fallback</span>
+          first model failed, next one answered
+        </li>
+        <li>
+          <span className="badge badge-cache">cache hit</span>
+          served from cache, no model call
+        </li>
+        <li>
+          <span className="why">Pinned</span>
+          kept on the step 1 model
+        </li>
+      </ul>
+    </section>
   );
 }
 

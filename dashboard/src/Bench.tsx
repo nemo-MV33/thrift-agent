@@ -50,7 +50,7 @@ export function BenchPage() {
   }, [file]);
 
   if (failed) return <Empty title="Event server is not reachable" body="Benchmark files are served by the dashboard server. Start it with npm run dev." />;
-  if (files && files.length === 0) return <Empty title="No benchmark results yet" body="Run the benchmark and its results file will appear here." />;
+  if (files && files.length === 0) return <Empty title="No benchmark results yet" body="Run the benchmark and its results file will appear here." command="cd agent && npm run bench -- --runs 3" />;
 
   return (
     <div className="bench">
@@ -58,6 +58,9 @@ export function BenchPage() {
         <div className="bench-title">
           <span className="eyebrow-label">Naive vs thrift</span>
           <h1 className="display">Benchmark</h1>
+          <p className="page-sub">
+            Small Node repos with failing tests, each solved by two agents. Naive sends every step to one big model with the full history. Thrift routes each call to the cheapest model that fits and keeps context short.
+          </p>
         </div>
         <label className="select">
           <span className="sr-only">Results file</span>
@@ -234,7 +237,7 @@ function TierTable({ rows, tiers }: { rows: BenchRow[]; tiers: string[] }) {
                 </td>
                 <td className="r num">{fmtInt(n?.tokens)}</td>
                 <td className="r num">{fmtInt(t?.tokens)}</td>
-                <td className={`r num ${d != null && d < 0 ? "pos" : ""}`}>{d == null ? "-" : fmtPct(-d)}</td>
+                <td className={`r num ${d == null ? "" : d < 0 ? "pos" : d > 0 ? "neg" : ""}`}>{d == null ? "-" : fmtPct(-d)}</td>
               </tr>
             );
           })}

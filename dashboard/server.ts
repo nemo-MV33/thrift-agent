@@ -145,29 +145,66 @@ async function pollFeed() {
 setInterval(pollFeed, 2000);
 pollFeed();
 
+function gatewayFrom(hit: LogEntry) {
+  return {
+    cost: num(hit.cost),
+    complexityTier: str(hit.complexity_tier),
+    routingRule: str(hit.routing_rule_name),
+    fallbackIndex: num(hit.fallback_index) ?? 0,
+    retries: num(hit.number_of_retries) ?? 0,
+    latency: num(hit.latency),
+    virtualKey: str(hit.virtual_key_name),
+    status: str(hit.status),
+  };
+}
+
+function applyHit(ev: Ev, hit: LogEntry) {
+  const gateway = gatewayFrom(hit);
+  ev.gateway = gateway;
+  delete ev.gatewayMissing;
+  broadcast("enrich", { runId: ev.runId, requestId: ev.requestId, gateway });
+}
+
+function markMissing(ev: Ev, reason: string) {
+  ev.gatewayMissing = reason;
+  broadcast("enrich", { runId: ev.runId, requestId: ev.requestId, missing: reason });
+}
+
 // Logs are written asynchronously by the gateway, so retry a few times.
 async function enrich(ev: Ev) {
   const id = str(ev.requestId);
   if (!id) return;
+  let reached = false;
   for (let attempt = 0; attempt < 6; attempt++) {
     await new Promise((r) => setTimeout(r, 600 + attempt * 700));
     const logs = await fetchLogs(100);
     if (!logs) continue;
+    reached = true;
     const hit = logs.find((l) => l.id === id);
-    if (!hit) continue;
-    const gateway = {
-      cost: num(hit.cost),
-      complexityTier: str(hit.complexity_tier),
-      routingRule: str(hit.routing_rule_name),
-      fallbackIndex: num(hit.fallback_index) ?? 0,
-      retries: num(hit.number_of_retries) ?? 0,
-      latency: num(hit.latency),
-      virtualKey: str(hit.virtual_key_name),
-      status: str(hit.status),
-    };
-    ev.gateway = gateway;
-    broadcast("enrich", { runId: ev.runId, requestId: id, gateway });
+    if (hit) return applyHit(ev, hit);
+  }
+  markMissing(ev, reached ? "not found" : "gateway offline");
+}
+
+// Runs replayed from disk have no gateway data yet. Look them up once, when a run is opened.
+const backfilled = new Set<string>();
+async function backfill(run: Run) {
+  if (backfilled.has(run.runId)) return;
+  const steps = run.events.filter((e) => e.type === "step" && str(e.requestId) && !e.gateway);
+  if (!steps.length) return;
+  backfilled.add(run.runId);
+  await new Promise((r) => setTimeout(r, 300));
+  const logs = await fetchLogs(1000);
+  if (!logs) {
+    backfilled.delete(run.runId);
+    for (const ev of steps) markMissing(ev, "gateway offline");
     return;
+  }
+  const byId = new Map(logs.map((l) => [String(l.id), l]));
+  for (const ev of steps) {
+    const hit = byId.get(String(ev.requestId));
+    if (hit) applyHit(ev, hit);
+    else markMissing(ev, "not found");
   }
 }
 
@@ -316,7 +353,10 @@ const server = http.createServer(async (req, res) => {
   const runMatch = p.match(/^\/api\/runs\/(.+)$/);
   if (runMatch) {
     const run = runs.get(decodeURIComponent(runMatch[1]));
-    return run ? send(res, 200, run) : send(res, 404, { error: "not found" });
+    if (!run) return send(res, 404, { error: "not found" });
+    send(res, 200, run);
+    void backfill(run);
+    return;
   }
 
   if (p === "/api/gateway") return send(res, 200, { online: gatewayOnline, url: BIFROST_URL, feed });
