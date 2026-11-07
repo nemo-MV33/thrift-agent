@@ -77,7 +77,10 @@ async function passes(): Promise<boolean> {
 // return null (not 0) if some never do.
 async function costOf(ids: string[]): Promise<number | null> {
   if (!ids.length) return 0;
-  for (let attempt = 0; attempt < 10; attempt++) {
+  // One fetch per attempt covers every id. Short waits first, since the log
+  // writer usually catches up within a second; about 10 s in total.
+  for (const wait of [0, 300, 700, 1000, 2000, 3000, 3000]) {
+    if (wait) await new Promise((ok) => setTimeout(ok, wait));
     try {
       const res = await fetch(`${GATEWAY}/api/logs?limit=500`, {
         headers: { "X-Bifrost-Setup-Token": process.env.BIFROST_SETUP_TOKEN ?? "" },
@@ -85,12 +88,18 @@ async function costOf(ids: string[]): Promise<number | null> {
       const body: any = await res.json();
       // A request that failed over shows up as the failed attempt plus a
       // separate entry for the fallback, linked by parent_request_id.
-      const entries = (id: string) => body.logs.filter((l: any) => l.id === id || l.parent_request_id === id);
-      const settled = (id: string) => entries(id).some((l: any) => l.status === "success" && l.cost != null);
-      if (ids.every(settled))
-        return ids.reduce((sum, id) => sum + entries(id).reduce((s: number, l: any) => s + (l.cost ?? 0), 0), 0);
+      const byRoot = new Map<string, any[]>();
+      for (const l of body.logs ?? []) {
+        for (const key of new Set([l.id, l.parent_request_id].filter(Boolean))) {
+          const list = byRoot.get(key) ?? [];
+          list.push(l);
+          byRoot.set(key, list);
+        }
+      }
+      const entries = (id: string) => byRoot.get(id) ?? [];
+      if (ids.every((id) => entries(id).some((l) => l.status === "success" && l.cost != null)))
+        return ids.reduce((sum, id) => sum + entries(id).reduce((s, l) => s + (l.cost ?? 0), 0), 0);
     } catch {}
-    await new Promise((ok) => setTimeout(ok, 1000));
   }
   return null;
 }

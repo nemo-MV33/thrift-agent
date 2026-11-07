@@ -68,25 +68,45 @@ const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 // the tier rules off for those requests (see bifrost/config.json).
 let pinned = false;
 
-async function chat(messages: Message[]) {
+// One gateway round trip. Shared by the agent loop and the freshness check
+// so both read usage and routing headers the same way.
+async function gatewayChat(payload: Record<string, unknown>, extra: Record<string, string> = {}) {
   const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
     method: "POST",
-    headers: pinned ? { ...headers, "x-thrift-pinned": "1" } : headers,
-    // A cap on output: a small local model that runs past its context window
-    // can otherwise generate until the gateway times out (seen: 504 after 300 s).
-    body: JSON.stringify({ model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }),
+    headers: { ...headers, ...extra },
+    body: JSON.stringify(payload),
   });
-  const body = await res.json();
+  const body: any = await res.json();
   if (!res.ok) throw new Error(`gateway ${res.status}: ${body?.error?.message ?? JSON.stringify(body)}`);
+  const usage = body.usage ?? {};
+  const provider = res.headers.get("x-bifrost-routing-info-provider") ?? res.headers.get("x-bifrost-provider");
+  const servedModel = res.headers.get("x-bifrost-routing-info-model");
+  const fallback = res.headers.get("x-bifrost-routing-info-is-fallback") === "true";
+  const requestId = res.headers.get("x-bifrost-request-id");
+  const cacheHit = res.headers.get("x-bifrost-cache-hit") === "true";
   return {
     message: body.choices[0].message as Message,
-    usage: body.usage ?? {},
-    provider: res.headers.get("x-bifrost-routing-info-provider") ?? res.headers.get("x-bifrost-provider"),
-    servedModel: res.headers.get("x-bifrost-routing-info-model"),
-    fallback: res.headers.get("x-bifrost-routing-info-is-fallback") === "true",
-    requestId: res.headers.get("x-bifrost-request-id"),
-    cacheHit: res.headers.get("x-bifrost-cache-hit") === "true",
+    usage,
+    provider,
+    servedModel,
+    fallback,
+    requestId,
+    cacheHit,
+    record: {
+      model: `${provider}/${servedModel}`,
+      prompt: usage.prompt_tokens ?? 0,
+      completion: usage.completion_tokens ?? 0,
+      fallback,
+      cacheHit,
+      requestId,
+    },
   };
+}
+
+function chat(messages: Message[]) {
+  // A cap on output: a small local model that runs past its context window
+  // can otherwise generate until the gateway times out (seen: 504 after 300 s).
+  return gatewayChat({ model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }, pinned ? { "x-thrift-pinned": "1" } : {});
 }
 
 async function execTool(call: ToolCall): Promise<Message> {
@@ -166,25 +186,14 @@ let freshness: Awaited<ReturnType<typeof checkFreshness>> = null;
 if (fresh) {
   // Claim extraction and judging are short JSON jobs, the small model is enough.
   freshness = await checkFreshness(workspace, task, async (msgs) => {
-    const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
-      method: "POST",
-      // An empty include list keeps Bifrost from attaching the workspace tools:
-      // these calls must answer in JSON, not go read files.
-      headers: { ...headers, "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "" },
-      body: JSON.stringify({ model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] }),
-    });
-    const body: any = await res.json();
-    if (!res.ok) throw new Error(`gateway ${res.status}: ${body?.error?.message}`);
-    const u = body.usage ?? {};
-    usage.push({
-      model: `${res.headers.get("x-bifrost-provider")}/${res.headers.get("x-bifrost-routing-info-model")}`,
-      prompt: u.prompt_tokens ?? 0,
-      completion: u.completion_tokens ?? 0,
-      fallback: res.headers.get("x-bifrost-routing-info-is-fallback") === "true",
-      cacheHit: res.headers.get("x-bifrost-cache-hit") === "true",
-      requestId: res.headers.get("x-bifrost-request-id"),
-    });
-    return { content: body.choices[0].message.content ?? "", tokens: u.total_tokens ?? 0, requestId: res.headers.get("x-bifrost-request-id") };
+    // An empty include list keeps Bifrost from attaching the workspace tools:
+    // these calls must answer in JSON, not go read files.
+    const r = await gatewayChat(
+      { model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
+      { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "" },
+    );
+    usage.push(r.record);
+    return { content: String(r.message.content ?? ""), tokens: r.usage.total_tokens ?? 0, requestId: r.requestId };
   }).catch((e) => {
     console.log(red(`freshness check skipped: ${e.message}`));
     return null;
@@ -245,6 +254,8 @@ function toolCallsFromText(content: string | null, step: number): ToolCall[] {
   return out;
 }
 
+const isTestRun = (cmd: unknown) => typeof cmd === "string" && /^\s*npm\s+(t|test|run\s+test)(\s|$)/.test(cmd);
+
 let steps = 0;
 let stopped = false;
 let wrote = false;
@@ -271,14 +282,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
   }
   tokens += r.usage.total_tokens ?? 0;
   steps = step;
-  usage.push({
-    model: `${r.provider}/${r.servedModel}`,
-    prompt: r.usage.prompt_tokens ?? 0,
-    completion: r.usage.completion_tokens ?? 0,
-    fallback: r.fallback,
-    cacheHit: r.cacheHit,
-    requestId: r.requestId,
-  });
+  usage.push(r.record);
   const route = `${r.provider}/${r.servedModel}${r.fallback ? " (fallback)" : ""}`;
   console.log(gray(`[step ${step}] ${route}  tokens ${r.usage.total_tokens ?? "?"}`));
   emit("step", {
@@ -325,9 +329,10 @@ for (let step = 1; step <= 15 && !stopped; step++) {
       // file, so the old copy in the repo context is dead weight.
       messages[1] = { ...messages[1], content: dropFile(String(messages[1].content), input.path) };
     }
-    // Tests green after an edit means the job is done. Asking the model to
+    // Tests green after an edit means the job is done. Only the project's own
+    // test script counts: "cat test.js" or "node -e ..." exiting 0 says nothing. Asking the model to
     // say so in a sentence would cost one more full round trip.
-    if (toolName === "run_command" && wrote && /test/.test(input.command ?? "") && String(result.content).startsWith("exit 0")) {
+    if (toolName === "run_command" && wrote && isTestRun(input.command) && String(result.content).startsWith("exit 0")) {
       console.log("\ntests pass after the edit, done");
       finished = true;
       break;
