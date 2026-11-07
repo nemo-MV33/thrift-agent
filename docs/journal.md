@@ -129,3 +129,49 @@ Quota failures are not agent failures, so `summarize` now leaves out runs that d
 ### Private mode hang
 
 A private-mode run on task 01 hung on step 2 until Bifrost gave up with 504 after 300 s. Ollama itself was fine. Our guess: the prompt plus tool output ran past qwen2.5-coder's 4096-token context window, and with no output limit the model kept generating. Requests now carry `max_tokens` (1,500 in private mode, 4,000 otherwise). The same run then finished in 3 steps and 4,657 tokens, but the fix was wrong and tests failed. That matches what we saw before: the 7B local model passes this task about half the time. Private mode keeps code on the machine. It is not where you get the best pass rate.
+
+### Demo scenes, 7 Nov
+
+Recorded four scenes against the live gateway with the dashboard open. Screenshots are in `docs/demo/`. All runs used the normal workspace, `sandbox/demo-app`, staged from a bench task the same way the benchmark does it. That directory is fixed by the MCP server args in the gateway config, so `THRIFT_WORKSPACE` alone does not move where files get written.
+
+#### MCP header check
+
+Freshness calls send `x-bf-mcp-include-clients: ""` to keep the workspace tools away from the judge model. That does not work. Through the gateway on Gemini flash-lite, with `tools: []` and the empty header, the model still listed `ws-list_files`, `ws-read_file`, `ws-write_file` and `ws-run_command`. Without the header the answer was the same. With `x-bf-mcp-include-clients: none` the model answered NONE. Bifrost seems to treat an empty value as "header not set". The fix belongs in `agent/src/freshness.ts` (send a name that matches no client, like `none`).
+
+#### Fallback
+
+The Groq daily quota had reset by the time we recorded, so there was no real 429 to show. We restarted the gateway with an invalid Groq key instead (only for this scene, real key restored after). Task 01, thrift mode:
+
+- Groq gpt-oss-20b failed, Bifrost moved to gemini-3.5-flash-lite (`fallback_index` 1 in the gateway log), the agent marked step 1 as a fallback.
+- Step 2 stayed pinned on Gemini, wrote the fix, tests passed 3 of 3.
+- 2,709 tokens, 2 steps, $0.00097.
+
+Screenshot: `fallback.png` (also used as `dashboard.png`).
+
+#### Budget 402
+
+Set the `thrift-dev` daily budget to $0.0435 through `PUT /api/governance/virtual-keys/vk-dev`, with $0.0425 already spent that day. The first run (task 07, 3,080 tokens) still got through. It looks like Bifrost checks the budget before a request and only adds the cost after it. The next run (task 08) did one step for 2,737 tokens, then got `402 Budget exceeded: 0.0446 >= 0.0435 dollars` on step 2. The agent printed the error, the dashboard showed "Stopped: virtual key budget exhausted", and the process exited normally. The budget went back to $2.00 right after.
+
+Screenshot: `budget.png`.
+
+#### Private mode
+
+`--private` sends everything to qwen2.5-coder:7b on Ollama through the `thrift-private` key. Two simple tasks, both passed on the first try this time:
+
+- 04 slugify: 1 step, 822 tokens, 14 s, tests 2 of 2.
+- 02 pagination: 1 step, 992 tokens, about 10 s, tests 2 of 2. Before the run the same tests failed 2 of 2, and the protected test file was unchanged afterwards.
+
+Cost is $0. This does not change what we wrote earlier: task 01 in private mode fails about half the time. We picked tasks where the small model does well.
+
+Screenshot: `private.png`.
+
+#### Approval
+
+Run without `--yes`, in a copy of task 01 with a local bare repo as `origin`. The task asked for `git add -A`, `git commit` and `git push origin main` and said not to edit files. Each command came up as `run: ...` with an `apply? [y/N]` prompt.
+
+- Deny: add and commit approved, push answered `n`. The agent printed "rejected, stopping" after 3 steps and 2,874 tokens. The remote still had only the starting commit.
+- Approve: same three prompts answered `y`. The push went through, the remote got the "Fix percent coupon" commit. 4 steps, 3,984 tokens.
+
+Terminal output for both is in `approval-deny.txt` and `approval-approve.txt`, the dashboard view of the denied run in `approval.png`.
+
+Two things we noticed. When the task is a code fix, the agent ends as soon as the tests pass after a write, so a "fix it, then commit and push" task never reaches the push. And in thrift mode the system prompt pushes the model to write a fix even when the task says the fix is already there; it only stopped doing that when told not to edit any files.
