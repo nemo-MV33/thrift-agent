@@ -78,7 +78,13 @@ export function BenchPage() {
   );
 }
 
-function BenchBody({ rows }: { rows: BenchRow[] }) {
+// A run that died on a provider quota (Groq 429) says nothing about the
+// agent, so it is left out everywhere, same as in agent/src/summarize.ts.
+const hitQuota = (r: BenchRow) => !r.pass && /\b429\b|rate limit/i.test(String((r as any).error ?? ""));
+
+function BenchBody({ rows: all }: { rows: BenchRow[] }) {
+  const rows = all.filter((r) => !hitQuota(r));
+  const skipped = all.length - rows.length;
   const main = rows.filter((r) => r.mode !== "stale");
   const naive = agg(main.filter((r) => r.mode === "naive"));
   const thrift = agg(main.filter((r) => r.mode === "thrift"));
@@ -107,7 +113,9 @@ function BenchBody({ rows }: { rows: BenchRow[] }) {
       <section className="panel">
         <header className="panel-head">
           <h2>Per task</h2>
-          <span className="muted">{rows.length} runs</span>
+          <span className="muted">
+            {rows.length} runs{skipped > 0 && `, ${skipped} left out (provider quota hit, not an agent failure)`}
+          </span>
         </header>
         <TaskTable rows={rows} />
       </section>
