@@ -1,0 +1,2 @@
+{"task":"06-invoice-net-days","tier":"medium","mode":"naive","run":1,"pass":false,"tokens":null,"steps":null,"ms":null,"cost":null,"models":[],"fallbacks":0,"crashed":true}
+{"task":"06-invoice-net-days","tier":"medium","mode":"thrift","run":1,"pass":true,"tokens":8956,"steps":4,"ms":6746,"cost":0.0009719999999999999,"models":["groq/openai/gpt-oss-20b"],"fallbacks":0,"crashed":false}

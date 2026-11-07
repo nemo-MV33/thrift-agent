@@ -1,0 +1,10 @@
+{"task":"01-cart-coupon","tier":"simple","mode":"naive","run":1,"pass":true,"tokens":18597,"steps":11,"ms":88820,"cost":0.0025844999999999996,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"01-cart-coupon","tier":"simple","mode":"thrift","run":1,"pass":true,"tokens":5276,"steps":4,"ms":3155,"cost":0,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"01-cart-coupon","tier":"simple","mode":"naive","run":2,"pass":true,"tokens":14196,"steps":9,"ms":55558,"cost":0.0017468999999999996,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"01-cart-coupon","tier":"simple","mode":"thrift","run":2,"pass":true,"tokens":11991,"steps":7,"ms":65542,"cost":0.00189075,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"01-cart-coupon","tier":"simple","mode":"naive","run":3,"pass":true,"tokens":18788,"steps":11,"ms":74600,"cost":0.0021232499999999997,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"01-cart-coupon","tier":"simple","mode":"thrift","run":3,"pass":true,"tokens":5371,"steps":4,"ms":3666,"cost":0,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"02-paginate-offset","tier":"simple","mode":"naive","run":1,"pass":true,"tokens":8938,"steps":6,"ms":54613,"cost":0.0010976999999999998,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"02-paginate-offset","tier":"simple","mode":"thrift","run":1,"pass":true,"tokens":4437,"steps":4,"ms":3477,"cost":0,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"02-paginate-offset","tier":"simple","mode":"naive","run":2,"pass":true,"tokens":8972,"steps":6,"ms":33778,"cost":0.0008163000000000001,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}
+{"task":"02-paginate-offset","tier":"simple","mode":"thrift","run":2,"pass":true,"tokens":3178,"steps":3,"ms":2213,"cost":0,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"crashed":false,"error":null}

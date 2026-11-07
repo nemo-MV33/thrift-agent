@@ -55,3 +55,14 @@ Task: fix `cart.js` so the tests pass (now bench task 01).
 - Each run gets its own cache key, so no run sees answers cached by an earlier one.
 - The full run (14 x 2 modes x 3) was started on 2026-11-07. Raw results: `bench/results/run-*.jsonl`, log: `bench/results/full.log`.
 - Early lines from the full run looked worse than the single-task numbers. Thrift went to gpt-oss-120b on a simple task and used 5-12k tokens, and some thrift runs reported cost 0. Both need a look before we quote any number.
+
+### Full run, first attempt (partial)
+
+The background run stopped after 10 of 84 runs (tasks 01 and 02 only, all simple), probably when the session that started it went idle. File: `bench/results/run-2026-11-07T06-01-*.jsonl`.
+
+| Mode | Runs | Pass | Tokens | Cost | Time |
+|---|---|---|---|---|---|
+| naive | 5 | 100% | 13,898 | $0.00167 | 61.5 s |
+| thrift | 5 | 100% | 6,051 | $0.00038 | 15.6 s |
+
+That is -56% tokens, -77% cost and -75% time at the same pass rate. It's only two simple tasks, though, and the complexity router sent them to gpt-oss-120b instead of 20b, with some runs reporting cost 0. Treat these as preliminary until the full run finishes.

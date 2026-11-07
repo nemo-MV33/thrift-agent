@@ -1,0 +1,2 @@
+{"task":"06-invoice-net-days","tier":"medium","mode":"naive","run":1,"pass":true,"tokens":7003,"steps":7,"ms":7645,"cost":0.00036922500000000004,"models":["groq/openai/gpt-oss-20b","gemini/gemini-3.5-flash-lite"],"fallbacks":1,"crashed":false}
+{"task":"06-invoice-net-days","tier":"medium","mode":"thrift","run":1,"pass":true,"tokens":4771,"steps":3,"ms":4741,"cost":0.00027495,"models":["groq/openai/gpt-oss-20b","gemini/gemini-3.5-flash-lite"],"fallbacks":2,"crashed":false}

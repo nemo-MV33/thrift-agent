@@ -1,0 +1,11 @@
+14 tasks x 2 modes x 3 runs -> bench/results/run-2026-11-07T06-00-49-151Z.jsonl
+01-cart-coupon               naive  #1 PASS tokens=18597 cost=0.00258 groq/openai/gpt-oss-120b
+01-cart-coupon               thrift #1 PASS tokens=5276 cost=0.00000 groq/openai/gpt-oss-120b
+01-cart-coupon               naive  #2 PASS tokens=14196 cost=0.00175 groq/openai/gpt-oss-120b
+01-cart-coupon               thrift #2 PASS tokens=11991 cost=0.00189 groq/openai/gpt-oss-120b
+01-cart-coupon               naive  #3 PASS tokens=18788 cost=0.00212 groq/openai/gpt-oss-120b
+01-cart-coupon               thrift #3 PASS tokens=5371 cost=0.00000 groq/openai/gpt-oss-120b
+02-paginate-offset           naive  #1 PASS tokens=8938 cost=0.00110 groq/openai/gpt-oss-120b
+02-paginate-offset           thrift #1 PASS tokens=4437 cost=0.00000 groq/openai/gpt-oss-120b
+02-paginate-offset           naive  #2 PASS tokens=8972 cost=0.00082 groq/openai/gpt-oss-120b
+02-paginate-offset           thrift #2 PASS tokens=3178 cost=0.00000 groq/openai/gpt-oss-120b
