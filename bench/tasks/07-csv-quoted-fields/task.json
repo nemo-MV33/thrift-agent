@@ -1,0 +1,7 @@
+{
+  "prompt": "parseCsv breaks rows apart when a quoted field contains a comma, and doubled quotes inside a quoted field should come out as a single quote. Fix the parser.",
+  "tier": "medium",
+  "protected": [
+    "csv.test.js"
+  ]
+}

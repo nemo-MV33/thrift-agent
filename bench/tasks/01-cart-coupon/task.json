@@ -1,0 +1,7 @@
+{
+  "prompt": "Prices come out wrong when a percent coupon is applied at checkout. Fix it.",
+  "tier": "simple",
+  "protected": [
+    "cart.test.js"
+  ]
+}

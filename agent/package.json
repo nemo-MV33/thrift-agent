@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "bench": "tsx src/bench.ts",
+    "summarize": "tsx src/summarize.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",

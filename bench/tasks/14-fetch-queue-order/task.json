@@ -1,0 +1,9 @@
+{
+  "prompt": "fetchAll returns results in the wrong order, ignores the concurrency limit, and reports progress before requests actually finish. Fix it.",
+  "tier": "complex",
+  "protected": [
+    "test/queue.test.js",
+    "test/fetcher.test.js",
+    "test/helpers.js"
+  ]
+}

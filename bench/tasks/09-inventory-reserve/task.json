@@ -1,0 +1,7 @@
+{
+  "prompt": "reserve() happily accepts negative, fractional or too large quantities. It should throw a TypeError for anything that is not a positive integer and an Error saying 'insufficient stock' when there is not enough, without changing stock.",
+  "tier": "medium",
+  "protected": [
+    "inventory.test.js"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "prompt": "Add once() to our event emitter. A once listener runs a single time, can be removed with off() using the original function, and must not cause other listeners for the same event to be skipped.",
+  "tier": "medium",
+  "protected": [
+    "emitter.test.js"
+  ]
+}

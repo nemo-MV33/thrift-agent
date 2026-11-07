@@ -1,0 +1,7 @@
+{
+  "prompt": "Booking ranges include their end date, but two ranges that share a single day are not seen as overlapping, and merging sometimes makes a range shorter. Fix it.",
+  "tier": "medium",
+  "protected": [
+    "ranges.test.js"
+  ]
+}

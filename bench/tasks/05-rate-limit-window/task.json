@@ -1,0 +1,7 @@
+{
+  "prompt": "The rate limiter lets clients through almost immediately after they hit the limit, it should block them for a full minute. Fix it.",
+  "tier": "simple",
+  "protected": [
+    "limiter.test.js"
+  ]
+}

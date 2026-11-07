@@ -1,0 +1,7 @@
+{
+  "prompt": "Invoices always get a 30 day due date. Add a netDays option to createInvoice (default 30) and reject anything that is not a whole number from 0 to 120 with a RangeError.",
+  "tier": "medium",
+  "protected": [
+    "invoices.test.js"
+  ]
+}

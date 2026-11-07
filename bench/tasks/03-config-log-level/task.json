@@ -1,0 +1,7 @@
+{
+  "prompt": "Setting LOG_LEVEL in the environment has no effect, the service always logs at info. Fix it.",
+  "tier": "simple",
+  "protected": [
+    "config.test.js"
+  ]
+}

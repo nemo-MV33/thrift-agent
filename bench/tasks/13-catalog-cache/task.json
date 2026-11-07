@@ -1,0 +1,7 @@
+{
+  "prompt": "Product lookups hit the database on every call. Add caching to the catalog so repeated getProduct calls for the same id only read once, and make sure price changes made through setPrice show up right away.",
+  "tier": "complex",
+  "protected": [
+    "test/catalog.test.js"
+  ]
+}

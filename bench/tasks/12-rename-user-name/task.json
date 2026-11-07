@@ -1,0 +1,8 @@
+{
+  "prompt": "We're renaming the user field `fullname` to `name` everywhere: the store, formatting helpers and API output. Also add src/migrate.js exporting migrateUser(record) that upgrades old records and leaves already migrated ones untouched.",
+  "tier": "complex",
+  "protected": [
+    "test/users.test.js",
+    "test/migrate.test.js"
+  ]
+}

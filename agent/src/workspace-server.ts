@@ -26,7 +26,7 @@ const tools = [
   {
     name: "list_files",
     description: "List files in a directory of the workspace, recursively, skipping node_modules and .git.",
-    inputSchema: { type: "object", properties: { dir: str("Directory relative to the workspace root, '.' for root") }, required: ["dir"] },
+    inputSchema: { type: "object", properties: { dir: str("Directory relative to the workspace root, '.' for root") } },
   },
   {
     name: "read_file",

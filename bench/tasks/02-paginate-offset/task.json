@@ -1,0 +1,7 @@
+{
+  "prompt": "Page 1 of the results list skips the first few items. Fix pagination.",
+  "tier": "simple",
+  "protected": [
+    "paginate.test.js"
+  ]
+}

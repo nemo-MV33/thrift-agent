@@ -1,0 +1,7 @@
+{
+  "prompt": "slugify leaves a dash at the end for titles that end with punctuation, like 'Hello, World!'. Fix it.",
+  "tier": "simple",
+  "protected": [
+    "slugify.test.js"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "prompt": "formatDuration should print durations like '1h 2m 3s' (skip zero parts, '0s' for zero) instead of raw seconds. Also add parseDuration that turns such strings back into milliseconds and throws on input it can't read.",
+  "tier": "medium",
+  "protected": [
+    "duration.test.js"
+  ]
+}

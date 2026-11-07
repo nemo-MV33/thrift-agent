@@ -23,15 +23,22 @@ if (!task) {
   process.exit(1);
 }
 
-const vk = isPrivate ? process.env.THRIFT_VK_PRIVATE : process.env.THRIFT_VK_DEV;
+const vk = isPrivate
+  ? process.env.THRIFT_VK_PRIVATE
+  : naive
+    ? process.env.THRIFT_VK_BASELINE
+    : process.env.THRIFT_VK_DEV;
 const model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
-const fallbacks = isPrivate ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
+const fallbacks = isPrivate || naive ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
 
 // Tools that change something on disk or run code need a yes from the user.
 const RISKY = new Set(["write_file", "run_command"]);
 
 
-const headers = { "Content-Type": "application/json", "x-bf-vk": vk ?? "" };
+const headers: Record<string, string> = { "Content-Type": "application/json", "x-bf-vk": vk ?? "" };
+// The benchmark gives each run its own cache namespace so repeated runs
+// don't get answers cached by earlier ones.
+if (process.env.THRIFT_CACHE_KEY) headers["x-bf-cache-key"] = process.env.THRIFT_CACHE_KEY;
 const rl = createInterface({ input: stdin, output: stdout });
 const gray = (s: string) => `\x1b[90m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -51,6 +58,7 @@ async function chat(messages: Message[]) {
     provider: res.headers.get("x-bifrost-routing-info-provider") ?? res.headers.get("x-bifrost-provider"),
     servedModel: res.headers.get("x-bifrost-routing-info-model"),
     fallback: res.headers.get("x-bifrost-routing-info-is-fallback") === "true",
+    requestId: res.headers.get("x-bifrost-request-id"),
   };
 }
 
@@ -165,12 +173,28 @@ function toolCallsFromText(content: string | null, step: number): ToolCall[] {
 
 let tokens = 0;
 let steps = 0;
+const usage: { model: string; prompt: number; completion: number; fallback: boolean; requestId: string | null }[] = [];
 const started = Date.now();
 let stopped = false;
+let error: string | null = null;
 for (let step = 1; step <= 15 && !stopped; step++) {
-  const r = await chat(naive ? messages : compactHistory(messages));
+  let r: Awaited<ReturnType<typeof chat>>;
+  try {
+    r = await chat(naive ? messages : compactHistory(messages));
+  } catch (e: any) {
+    console.log(red(e.message));
+    error = e.message;
+    break;
+  }
   tokens += r.usage.total_tokens ?? 0;
   steps = step;
+  usage.push({
+    model: `${r.provider}/${r.servedModel}`,
+    prompt: r.usage.prompt_tokens ?? 0,
+    completion: r.usage.completion_tokens ?? 0,
+    fallback: r.fallback,
+    requestId: r.requestId,
+  });
   const route = `${r.provider}/${r.servedModel}${r.fallback ? " (fallback)" : ""}`;
   console.log(gray(`[step ${step}] ${route}  tokens ${r.usage.total_tokens ?? "?"}`));
   if (!r.message.tool_calls?.length) {
@@ -199,5 +223,5 @@ for (let step = 1; step <= 15 && !stopped; step++) {
 }
 
 console.log(gray(`\ntotal tokens: ${tokens}, steps: ${steps}`));
-if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, ms: Date.now() - started }));
+if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage }));
 rl.close();
