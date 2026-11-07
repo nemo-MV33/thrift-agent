@@ -72,7 +72,9 @@ async function chat(messages: Message[]) {
   const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
     method: "POST",
     headers: pinned ? { ...headers, "x-thrift-pinned": "1" } : headers,
-    body: JSON.stringify({ model, messages, fallbacks }),
+    // A cap on output: a small local model that runs past its context window
+    // can otherwise generate until the gateway times out (seen: 504 after 300 s).
+    body: JSON.stringify({ model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(`gateway ${res.status}: ${body?.error?.message ?? JSON.stringify(body)}`);

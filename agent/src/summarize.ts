@@ -4,7 +4,12 @@ import { promises as fs } from "node:fs";
 
 const file = process.argv[2];
 if (!file) throw new Error("pass a results .jsonl file");
-const rows = (await fs.readFile(file, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+const all = (await fs.readFile(file, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+// A run that died on a provider quota says nothing about the agent. Those are
+// reported separately and left out of every average.
+const quota = (r: any) => /\b429\b|rate limit/i.test(r.error ?? "") && !r.pass;
+const rows = all.filter((r) => !quota(r));
+if (all.length !== rows.length) console.log(`left out ${all.length - rows.length} runs that hit a provider quota\n`);
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 function stats(sel: any[]) {
