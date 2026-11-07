@@ -11,8 +11,10 @@ function stats(sel: any[]) {
   return {
     runs: sel.length,
     passRate: mean(sel.map((r) => (r.pass ? 1 : 0))),
-    tokens: mean(sel.map((r) => r.tokens ?? 0)),
-    cost: mean(sel.map((r) => r.cost ?? 0)),
+    tokens: mean(sel.filter((r) => r.tokens != null).map((r) => r.tokens)),
+    // Runs whose cost never showed up in the logs are left out, not counted as free.
+    cost: mean(sel.filter((r) => r.cost != null).map((r) => r.cost)),
+    costMissing: sel.filter((r) => r.cost == null).length,
     seconds: mean(sel.map((r) => (r.ms ?? 0) / 1000)),
   };
 }

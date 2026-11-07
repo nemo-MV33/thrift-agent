@@ -5,7 +5,8 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildContext, compactHistory, type Message, type ToolCall } from "./context.js";
+import { checkFreshness, freshnessNotes } from "./freshness.js";
+import { buildContext, compactHistory, dropFile, type Message, type ToolCall } from "./context.js";
 
 const GATEWAY = process.env.BIFROST_URL ?? "http://localhost:8080";
 const args = process.argv.slice(2);
@@ -15,6 +16,8 @@ const autoYes = args.includes("--yes");
 // context up front, full history every step.
 const naive = args.includes("--naive");
 const asJson = args.includes("--json");
+// Private repos never leave the machine, so no web lookups there either.
+const fresh = !naive && !isPrivate && !args.includes("--no-fresh");
 const workspace = path.resolve(process.env.THRIFT_WORKSPACE ?? fileURLToPath(new URL("../../sandbox/demo-app", import.meta.url)));
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
 
@@ -28,8 +31,8 @@ const vk = isPrivate
   : naive
     ? process.env.THRIFT_VK_BASELINE
     : process.env.THRIFT_VK_DEV;
-const model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
-const fallbacks = isPrivate || naive ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
+let model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
+let fallbacks = isPrivate || naive ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
 
 // Tools that change something on disk or run code need a yes from the user.
 const RISKY = new Set(["write_file", "run_command"]);
@@ -39,15 +42,36 @@ const headers: Record<string, string> = { "Content-Type": "application/json", "x
 // The benchmark gives each run its own cache namespace so repeated runs
 // don't get answers cached by earlier ones.
 if (process.env.THRIFT_CACHE_KEY) headers["x-bf-cache-key"] = process.env.THRIFT_CACHE_KEY;
+// Live events for the dashboard. Fire and forget: the agent must never wait
+// on, or fail because of, the dashboard.
+const EVENTS = process.env.THRIFT_EVENTS_URL ?? "http://localhost:5199/events";
+const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const mode = isPrivate ? "private" : naive ? "naive" : "thrift";
+function emit(type: string, data: Record<string, unknown> = {}) {
+  fetch(EVENTS, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runId, type, mode, at: Date.now(), ...data }),
+    signal: AbortSignal.timeout(type === "run_end" ? 3000 : 1000),
+  }).catch(() => {});
+}
+
 const rl = createInterface({ input: stdin, output: stdout });
 const gray = (s: string) => `\x1b[90m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 
+// Bifrost's complexity router only looks at the latest message. After the
+// first step that is a tool result ("exit 0 ..."), which says nothing about
+// how hard the task is. So the first request is routed on the task itself,
+// and later steps stay on whatever model it picked. The pinned header turns
+// the tier rules off for those requests (see bifrost/config.json).
+let pinned = false;
+
 async function chat(messages: Message[]) {
   const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
     method: "POST",
-    headers,
+    headers: pinned ? { ...headers, "x-thrift-pinned": "1" } : headers,
     body: JSON.stringify({ model, messages, fallbacks }),
   });
   const body = await res.json();
@@ -59,6 +83,7 @@ async function chat(messages: Message[]) {
     servedModel: res.headers.get("x-bifrost-routing-info-model"),
     fallback: res.headers.get("x-bifrost-routing-info-is-fallback") === "true",
     requestId: res.headers.get("x-bifrost-request-id"),
+    cacheHit: res.headers.get("x-bifrost-cache-hit") === "true",
   };
 }
 
@@ -113,9 +138,16 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
   } else {
     console.log(`\nrun: ${input.command}`);
   }
-  if (autoYes) return true;
+  const detail = toolName === "write_file" ? { path: input.path } : { command: input.command };
+  if (autoYes) {
+    emit("approval", { tool: toolName, ...detail, approved: true, auto: true });
+    return true;
+  }
+  emit("approval_wait", { tool: toolName, ...detail });
   const answer = await rl.question("apply? [y/N] ");
-  return answer.trim().toLowerCase().startsWith("y");
+  const approved = answer.trim().toLowerCase().startsWith("y");
+  emit("approval", { tool: toolName, ...detail, approved, auto: false });
+  return approved;
 }
 
 const SYSTEM = naive
@@ -124,11 +156,51 @@ const SYSTEM = naive
   : "Coding agent. The relevant files are already below, don't read them again. " +
     "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
 
+emit("run_start", { task, workspace: path.basename(workspace) });
+let tokens = 0;
+const usage: { model: string; prompt: number; completion: number; fallback: boolean; cacheHit: boolean; requestId: string | null }[] = [];
+const started = Date.now();
+let freshness: Awaited<ReturnType<typeof checkFreshness>> = null;
+if (fresh) {
+  // Claim extraction and judging are short JSON jobs, the small model is enough.
+  freshness = await checkFreshness(workspace, task, async (msgs) => {
+    const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
+      method: "POST",
+      // An empty include list keeps Bifrost from attaching the workspace tools:
+      // these calls must answer in JSON, not go read files.
+      headers: { ...headers, "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "" },
+      body: JSON.stringify({ model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] }),
+    });
+    const body: any = await res.json();
+    if (!res.ok) throw new Error(`gateway ${res.status}: ${body?.error?.message}`);
+    const u = body.usage ?? {};
+    usage.push({
+      model: `${res.headers.get("x-bifrost-provider")}/${res.headers.get("x-bifrost-routing-info-model")}`,
+      prompt: u.prompt_tokens ?? 0,
+      completion: u.completion_tokens ?? 0,
+      fallback: res.headers.get("x-bifrost-routing-info-is-fallback") === "true",
+      cacheHit: res.headers.get("x-bifrost-cache-hit") === "true",
+      requestId: res.headers.get("x-bifrost-request-id"),
+    });
+    return { content: body.choices[0].message.content ?? "", tokens: u.total_tokens ?? 0, requestId: res.headers.get("x-bifrost-request-id") };
+  }).catch((e) => {
+    console.log(red(`freshness check skipped: ${e.message}`));
+    return null;
+  });
+  if (freshness) {
+    tokens += freshness.tokens;
+    emit("freshness", { verdicts: freshness.verdicts, searches: freshness.searches, tokens: freshness.tokens, ms: freshness.ms });
+    for (const v of freshness.verdicts)
+      console.log(gray(`[fresh] ${v.library}: ${v.status} (${v.freshness}) ${v.claim}`));
+  }
+}
+const notes = freshness ? freshnessNotes(freshness) : null;
+
 const messages: Message[] = [
   { role: "system", content: SYSTEM },
   // Repo context and the task go in separate messages. Bifrost classifies
   // complexity from the latest user message only, so it sees just the task.
-  ...(naive ? [] : [{ role: "user", content: await buildContext(workspace, task) }]),
+  ...(naive ? [] : [{ role: "user", content: (await buildContext(workspace, task)) + (notes ? `\n\n${notes}` : "") }]),
   { role: "user", content: task },
 ];
 
@@ -171,20 +243,29 @@ function toolCallsFromText(content: string | null, step: number): ToolCall[] {
   return out;
 }
 
-let tokens = 0;
 let steps = 0;
-const usage: { model: string; prompt: number; completion: number; fallback: boolean; requestId: string | null }[] = [];
-const started = Date.now();
 let stopped = false;
+let wrote = false;
+let finished = false;
 let error: string | null = null;
 for (let step = 1; step <= 15 && !stopped; step++) {
   let r: Awaited<ReturnType<typeof chat>>;
+  const stepStart = Date.now();
   try {
     r = await chat(naive ? messages : compactHistory(messages));
   } catch (e: any) {
     console.log(red(e.message));
     error = e.message;
+    emit("error", { step, message: e.message });
     break;
+  }
+  if (!pinned && !naive && !isPrivate) {
+    // A fallback on step 1 means the routed model is down, so stay on the one
+    // that answered. Without routing headers (a cache hit, say) keep the
+    // requested model, but pin anyway so step 2 isn't classified on tool output.
+    if (r.provider && r.servedModel) model = `${r.provider}/${r.servedModel}`;
+    fallbacks = fallbacks.filter((f) => f !== model);
+    pinned = true;
   }
   tokens += r.usage.total_tokens ?? 0;
   steps = step;
@@ -193,10 +274,23 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     prompt: r.usage.prompt_tokens ?? 0,
     completion: r.usage.completion_tokens ?? 0,
     fallback: r.fallback,
+    cacheHit: r.cacheHit,
     requestId: r.requestId,
   });
   const route = `${r.provider}/${r.servedModel}${r.fallback ? " (fallback)" : ""}`;
   console.log(gray(`[step ${step}] ${route}  tokens ${r.usage.total_tokens ?? "?"}`));
+  emit("step", {
+    step,
+    provider: r.provider,
+    model: r.servedModel,
+    fallback: r.fallback,
+    cacheHit: r.cacheHit,
+    pinned: step > 1 && pinned,
+    prompt: r.usage.prompt_tokens ?? 0,
+    completion: r.usage.completion_tokens ?? 0,
+    requestId: r.requestId,
+    ms: Date.now() - stepStart,
+  });
   if (!r.message.tool_calls?.length) {
     const recovered = toolCallsFromText(r.message.content, step);
     if (recovered.length) r.message = { role: "assistant", content: null, tool_calls: recovered };
@@ -211,6 +305,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
   for (const call of calls) {
     const toolName = call.function.name.replace(/^[^-]+-/, "");
     console.log(gray(`  tool ${toolName} ${call.function.arguments}`));
+    emit("tool", { step, tool: toolName, args: call.function.arguments.slice(0, 300) });
     // A "no" ends the run. Otherwise models tend to retry the same change
     // through another tool, which defeats the point of asking.
     if (RISKY.has(toolName) && !(await confirm(call, toolName))) {
@@ -218,10 +313,54 @@ for (let step = 1; step <= 15 && !stopped; step++) {
       stopped = true;
       break;
     }
-    messages.push(await execTool(call));
+    const result = await execTool(call);
+    messages.push(result);
+    if (naive) continue;
+    const input = JSON.parse(call.function.arguments || "{}");
+    if (toolName === "write_file" && typeof input.path === "string") {
+      wrote = true;
+      // The model's own write call already carries the new version of this
+      // file, so the old copy in the repo context is dead weight.
+      messages[1] = { ...messages[1], content: dropFile(String(messages[1].content), input.path) };
+    }
+    // Tests green after an edit means the job is done. Asking the model to
+    // say so in a sentence would cost one more full round trip.
+    if (toolName === "run_command" && wrote && /test/.test(input.command ?? "") && String(result.content).startsWith("exit 0")) {
+      console.log("\ntests pass after the edit, done");
+      finished = true;
+      break;
+    }
+  }
+  if (finished || stopped) break;
+  // After an edit the agent runs the tests itself instead of spending a
+  // model round trip on "now run npm test".
+  const editedNow = calls.some((c) => c.function.name.endsWith("write_file"));
+  const testedNow = calls.some((c) => c.function.name.endsWith("run_command"));
+  if (!naive && editedNow && !testedNow) {
+    const prefix = calls[0].function.name.replace(/[^-]+$/, "");
+    const call: ToolCall = {
+      id: `auto-test-${step}`,
+      type: "function",
+      function: { name: `${prefix}run_command`, arguments: JSON.stringify({ command: "npm test" }) },
+    };
+    if (!(await confirm(call, "run_command"))) {
+      console.log("rejected, stopping");
+      stopped = true;
+      break;
+    }
+    const result = await execTool(call);
+    messages.push({ role: "assistant", content: null, tool_calls: [call] }, result);
+    emit("tool", { step, tool: "run_command", args: '{"command":"npm test"}', auto: true, ok: String(result.content).startsWith("exit 0") });
+    if (String(result.content).startsWith("exit 0")) {
+      console.log("\ntests pass after the edit, done");
+      finished = true;
+      break;
+    }
+    console.log(gray("  tests still fail, back to the model"));
   }
 }
 
 console.log(gray(`\ntotal tokens: ${tokens}, steps: ${steps}`));
-if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage }));
+emit("run_end", { tokens, steps, finished, stopped, error, ms: Date.now() - started });
+if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage, freshness }));
 rl.close();

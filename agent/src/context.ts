@@ -74,3 +74,12 @@ export function compactHistory(messages: Message[], keep = 2): Message[] {
     return { ...m, content: `${lines[0].slice(0, 120)} [${lines.length} lines trimmed]` };
   });
 }
+
+/** Removes one file's section from a context message built by buildContext. */
+export function dropFile(context: string, file: string): string {
+  const rel = file.replace(/^\.\//, "");
+  return context
+    .split("\n\n--- ")
+    .filter((part, i) => i === 0 || !part.startsWith(`${rel}\n`))
+    .join("\n\n--- ");
+}

@@ -1,0 +1,6 @@
+{
+  "prompt": "validateSignup throws on bad input. It should return { ok: false, errors } instead, where errors lists every problem as { field, message } (field is the dotted path, like 'email' or 'address.zip'). Valid input should keep returning { ok: true, value }.",
+  "tier": "simple",
+  "freshness": true,
+  "protected": ["signup.test.js"]
+}

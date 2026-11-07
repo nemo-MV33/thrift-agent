@@ -1,0 +1,8 @@
+{
+  "prompt": "Add GET /files/<path> that responds with JSON { path } where path is everything after /files/, slashes included, so /files/docs/2026/report.pdf gives 'docs/2026/report.pdf'.",
+  "tier": "medium",
+  "freshness": true,
+  "protected": [
+    "files.test.js"
+  ]
+}

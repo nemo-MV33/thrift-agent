@@ -66,3 +66,49 @@ The background run stopped after 10 of 84 runs (tasks 01 and 02 only, all simple
 | thrift | 5 | 100% | 6,051 | $0.00038 | 15.6 s |
 
 That is -56% tokens, -77% cost and -75% time at the same pass rate. It's only two simple tasks, though, and the complexity router sent them to gpt-oss-120b instead of 20b, with some runs reporting cost 0. Treat these as preliminary until the full run finishes.
+
+### Why the first full run looked bad
+
+We stopped the first full run after two tasks and looked at the Bifrost logs instead.
+
+- Every thrift request was tagged MEDIUM and went to gpt-oss-120b. Two reasons. Bifrost's complexity classifier looks at the latest message only, and from step 2 on that is a tool result like "exit 0 ... TAP version 13", so every later step was classified on test output. On top of that, our reference phrases were few and generic, so even the bare task prompts mostly landed in MEDIUM.
+- Cost 0 on thrift runs: the runner read `/api/logs` 1.5 s after a run and summed whatever was there. Thrift runs finish in 2-3 s, so their log rows often weren't written yet. Missing rows counted as $0.
+
+Fixes:
+
+- The tier is decided once, on the first request, which carries only the task. The agent then pins the model Bifrost picked and sends `x-thrift-pinned: 1`; each routing rule has `!("x-thrift-pinned" in headers)` in its CEL expression, so later steps skip the classifier. If step 1 already went to a fallback, the agent stays on the model that answered.
+- Rewrote the reference phrases in more of a bug-report style. We kept them generic on purpose rather than paraphrasing the benchmark prompts. Result on the 14 task prompts: 9 match the tier we assigned by hand (was effectively 0 useful splits before). Misses: 05 simple->complex, 06/10/11 medium->simple, 08 medium->complex, 14 complex->simple.
+- The runner now waits until every request id is in the logs and records cost as null if one never shows up. The summary leaves null costs out instead of treating them as free.
+- Routing COMPLEX to gemini-3.5-flash cost $0.035 for a single task (task 08), more than ten naive runs on gpt-oss-120b. COMPLEX now goes to gpt-oss-120b with Gemini as a fallback. On our task sizes the cheap Groq models are simply the better deal.
+- Two step savings in the loop: after a file write the agent runs `npm test` itself instead of asking the model to, and stops as soon as tests pass after an edit. It also drops the old copy of a file from the repo context once the model has written a new one.
+
+Spot checks after the fixes (thrift, one run each): task 01 1,434 tokens, $0.00022 on gpt-oss-20b (naive used 14-19k tokens on the same task); task 07 1,575 tokens; task 12 11,121 tokens.
+
+### Cost lookup for fallbacks
+
+When Bifrost fails over, the log has two entries: the failed attempt under the request id the client sees, and the fallback under a new id with `parent_request_id` pointing back. The runner only looked up the first one, so any run with a fallback came out as "cost unknown". It now sums both, and each result row keeps its request ids so costs can be recomputed later.
+
+Side note: a quick test of ours used up the gpt-oss-20b minute quota while the benchmark was running, and the next thrift run moved to gemini-3.5-flash-lite on its own. Nice to see, but it also means we shouldn't run anything else against Groq during a benchmark.
+
+### Freshness check (Tavily)
+
+`agent/src/freshness.ts`. Runs before the first coding step, only in thrift mode, and only when the repo has npm dependencies. Private mode skips it, since the task text would leave the machine.
+
+1. gpt-oss-20b gets the task and the installed package versions (read from node_modules, not the range in package.json) and lists up to 3 facts the change will depend on, each with a search query.
+2. One Tavily advanced search per fact, top 3 results.
+3. gpt-oss-20b judges each fact against the results only: current, outdated or unknown, a freshness score from 0 to 1, a corrected usage and a source URL.
+4. Anything outdated or unknown goes into the repo context as a short note. Facts that hold cost nothing further.
+
+Both model calls and their tokens count toward the run, so the benchmark sees the full price of the check.
+
+Three new benchmark tasks use real packages whose current major versions changed things a model trained in 2024 would get wrong. We confirmed each break by running it, not from memory:
+
+- 15 zod 4: `ZodError.errors` no longer exists (it is `undefined`), only `issues`. Code written for zod 3 crashes with "cannot read properties of undefined".
+- 16 Express 5: `app.all('/api/*', ...)` throws "Missing parameter name at index 1" at startup. Wildcards need a name now (`/*rest`).
+- 17 Express 5: same wildcard change, and the named wildcard comes back as an array of segments, not a string.
+
+Each has a reference solution and was checked to fail before and pass after. The benchmark has a third mode, `stale`, which is thrift with the freshness check turned off, so the comparison isolates what Tavily adds.
+
+### Portable gateway config
+
+`bifrost/config.json` had absolute paths from one laptop (the MCP server is a stdio process). It is now generated by `scripts/gateway.sh` from `bifrost/config.template.json`, with `${THRIFT_ROOT}` replaced by the repo path. Only the template is in git.

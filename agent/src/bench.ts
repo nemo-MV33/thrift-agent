@@ -30,8 +30,8 @@ const modes = opt("modes", "naive,thrift").split(",");
 // spaced out. Otherwise the baseline would keep failing over to Gemini.
 const pauseMs = Number(opt("pause", "20000"));
 
-type Step = { model: string; prompt: number; completion: number; fallback: boolean; requestId: string | null };
-type AgentOut = { tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[] };
+type Step = { model: string; prompt: number; completion: number; fallback: boolean; cacheHit?: boolean; requestId: string | null };
+type AgentOut = { tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[]; freshness?: any };
 
 async function resetWorkspace(repo: string) {
   // Keep the directory itself: Bifrost's MCP server has it open as its root.
@@ -43,6 +43,8 @@ async function resetWorkspace(repo: string) {
 function runAgent(prompt: string, mode: string, cacheKey: string): Promise<AgentOut | null> {
   const args = ["tsx", path.join(here, "index.ts"), prompt, "--yes", "--json"];
   if (mode === "naive") args.push("--naive");
+  // "stale" is thrift with the freshness check off, to measure what Tavily adds.
+  if (mode === "stale") args.push("--no-fresh");
   return new Promise((resolve) => {
     const child = spawn("npx", args, {
       cwd: path.join(here, ".."),
@@ -69,18 +71,28 @@ async function passes(): Promise<boolean> {
   }
 }
 
+// Bifrost writes logs asynchronously, and a fast run can finish before its
+// last entries land. Earlier versions summed whatever was there and reported
+// cost 0 for quick runs. Now we wait until every request id shows up, and
+// return null (not 0) if some never do.
 async function costOf(ids: string[]): Promise<number | null> {
   if (!ids.length) return 0;
-  try {
-    const res = await fetch(`${GATEWAY}/api/logs?limit=500`, {
-      headers: { "X-Bifrost-Setup-Token": process.env.BIFROST_SETUP_TOKEN ?? "" },
-    });
-    const body: any = await res.json();
-    const byId = new Map<string, any>(body.logs.map((l: any) => [l.id, l]));
-    return ids.reduce((sum, id) => sum + (byId.get(id)?.cost ?? 0), 0);
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const res = await fetch(`${GATEWAY}/api/logs?limit=500`, {
+        headers: { "X-Bifrost-Setup-Token": process.env.BIFROST_SETUP_TOKEN ?? "" },
+      });
+      const body: any = await res.json();
+      // A request that failed over shows up as the failed attempt plus a
+      // separate entry for the fallback, linked by parent_request_id.
+      const entries = (id: string) => body.logs.filter((l: any) => l.id === id || l.parent_request_id === id);
+      const settled = (id: string) => entries(id).some((l: any) => l.status === "success" && l.cost != null);
+      if (ids.every(settled))
+        return ids.reduce((sum, id) => sum + entries(id).reduce((s: number, l: any) => s + (l.cost ?? 0), 0), 0);
+    } catch {}
+    await new Promise((ok) => setTimeout(ok, 1000));
   }
+  return null;
 }
 
 const tasks = (await fs.readdir(tasksDir)).filter((t) => !only || t.startsWith(only)).sort();
@@ -91,6 +103,11 @@ console.log(`${tasks.length} tasks x ${modes.length} modes x ${runs} runs -> ${p
 for (const task of tasks) {
   const meta = JSON.parse(await fs.readFile(path.join(tasksDir, task, "task.json"), "utf8"));
   const repo = path.join(tasksDir, task, "repo");
+  // Some tasks pin real npm packages (the freshness ones). node_modules is
+  // not in git, so install once on a fresh checkout.
+  const pkg = JSON.parse(await fs.readFile(path.join(repo, "package.json"), "utf8"));
+  if (pkg.dependencies && !(await fs.stat(path.join(repo, "node_modules")).catch(() => null)))
+    await run("npm", ["install", "--silent"], { cwd: repo });
   for (let r = 1; r <= runs; r++) {
     for (const mode of modes) {
       await resetWorkspace(repo);
@@ -112,8 +129,13 @@ for (const task of tasks) {
         cost,
         models: [...new Set(out?.usage.map((u) => u.model) ?? [])],
         fallbacks: out?.usage.filter((u) => u.fallback).length ?? 0,
+        cacheHits: out?.usage.filter((u) => u.cacheHit).length ?? 0,
+        requestIds: out?.usage.map((u) => u.requestId).filter(Boolean) ?? [],
         crashed: out === null,
         error: (out as any)?.error ?? null,
+        freshness: out?.freshness
+          ? { searches: out.freshness.searches, tokens: out.freshness.tokens, verdicts: out.freshness.verdicts }
+          : null,
       };
       await fs.appendFile(outFile, JSON.stringify(row) + "\n");
       console.log(

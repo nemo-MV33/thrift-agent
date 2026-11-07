@@ -1,0 +1,6 @@
+{
+  "prompt": "Requests to /api/ paths that don't match any route get Express's default HTML 404 page. Any unmatched request under /api/ (any method) should get status 404 and JSON { error: 'not found', path } where path is the request path.",
+  "tier": "simple",
+  "freshness": true,
+  "protected": ["app.test.js"]
+}
