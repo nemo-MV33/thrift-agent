@@ -1,0 +1,1 @@
+{"task":"12-rename-user-name","tier":"complex","mode":"thrift","run":1,"pass":true,"tokens":11121,"steps":4,"ms":33573,"cost":0.00218295,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"cacheHits":0,"crashed":false,"error":null}

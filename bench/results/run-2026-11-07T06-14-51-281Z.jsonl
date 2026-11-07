@@ -1,0 +1,1 @@
+{"task":"08-date-range-merge","tier":"medium","mode":"thrift","run":1,"pass":true,"tokens":8248,"steps":2,"ms":19477,"cost":0.035022,"models":["gemini/gemini-3.5-flash"],"fallbacks":0,"cacheHits":0,"crashed":false,"error":null}

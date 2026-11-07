@@ -1,0 +1,1 @@
+{"task":"01-cart-coupon","tier":"simple","mode":"thrift","run":1,"pass":true,"tokens":4482,"steps":3,"ms":3559,"cost":0.000506025,"models":["groq/openai/gpt-oss-20b"],"fallbacks":0,"cacheHits":0,"crashed":false,"error":null}

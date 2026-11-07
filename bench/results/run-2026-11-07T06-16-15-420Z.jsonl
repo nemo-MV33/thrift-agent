@@ -1,0 +1,1 @@
+{"task":"07-csv-quoted-fields","tier":"medium","mode":"thrift","run":1,"pass":true,"tokens":1575,"steps":1,"ms":6957,"cost":0.0005468999999999999,"models":["groq/openai/gpt-oss-120b"],"fallbacks":0,"cacheHits":0,"crashed":false,"error":null}
