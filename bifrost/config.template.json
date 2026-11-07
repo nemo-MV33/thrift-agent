@@ -1,0 +1,306 @@
+{
+  "client": {
+    "drop_excess_requests": false,
+    "enforce_governance_header": true
+  },
+  "providers": {
+    "gemini": {
+      "keys": [
+        {
+          "name": "gemini",
+          "value": "env.GEMINI_API_KEY",
+          "models": [
+            "*"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "max_retries": 1,
+        "retry_backoff_initial": 500,
+        "retry_backoff_max": 3000
+      }
+    },
+    "groq": {
+      "keys": [
+        {
+          "name": "groq",
+          "value": "env.GROQ_API_KEY",
+          "models": [
+            "*"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "max_retries": 4,
+        "retry_backoff_initial": 2000,
+        "retry_backoff_max": 15000
+      }
+    },
+    "ollama": {
+      "keys": [
+        {
+          "name": "local",
+          "value": "",
+          "models": [
+            "*"
+          ],
+          "weight": 1.0,
+          "ollama_key_config": {
+            "url": "http://localhost:11434"
+          }
+        }
+      ]
+    }
+  },
+  "vector_store": {
+    "enabled": true,
+    "type": "redis",
+    "config": {
+      "addr": "localhost:6379"
+    }
+  },
+  "plugins": [
+    {
+      "name": "semantic_cache",
+      "enabled": true,
+      "config": {
+        "dimension": 1,
+        "ttl": "1h",
+        "default_cache_key": "thrift"
+      }
+    }
+  ],
+  "mcp": {
+    "client_configs": [
+      {
+        "name": "ws",
+        "connection_type": "stdio",
+        "stdio_config": {
+          "command": "${THRIFT_ROOT}/agent/node_modules/.bin/tsx",
+          "args": [
+            "${THRIFT_ROOT}/agent/src/workspace-server.ts",
+            "${THRIFT_ROOT}/sandbox/demo-app"
+          ]
+        },
+        "tools_to_execute": [
+          "*"
+        ],
+        "tools_to_auto_execute": []
+      }
+    ]
+  },
+  "$schema": "https://www.getbifrost.ai/schema",
+  "setup_token": "env.BIFROST_SETUP_TOKEN",
+  "governance": {
+    "budgets": [
+      {
+        "id": "dev-daily",
+        "max_limit": 2.0,
+        "reset_duration": "1d",
+        "virtual_key_id": "vk-dev"
+      }
+    ],
+    "virtual_keys": [
+      {
+        "id": "vk-dev",
+        "name": "thrift-dev",
+        "value": "env.THRIFT_VK_DEV",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "gemini",
+            "weight": 1,
+            "allowed_models": [
+              "*"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          },
+          {
+            "provider": "groq",
+            "weight": 1,
+            "allowed_models": [
+              "*"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          },
+          {
+            "provider": "ollama",
+            "weight": 1,
+            "allowed_models": [
+              "*"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          }
+        ],
+        "mcp_configs": [
+          {
+            "mcp_client_name": "ws",
+            "tools_to_execute": [
+              "*"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "vk-private",
+        "name": "thrift-private",
+        "value": "env.THRIFT_VK_PRIVATE",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "ollama",
+            "weight": 1,
+            "allowed_models": [
+              "*"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          }
+        ],
+        "mcp_configs": [
+          {
+            "mcp_client_name": "ws",
+            "tools_to_execute": [
+              "*"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "vk-baseline",
+        "name": "thrift-baseline",
+        "value": "env.THRIFT_VK_BASELINE",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "groq",
+            "weight": 1,
+            "allowed_models": [
+              "*"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          }
+        ],
+        "mcp_configs": [
+          {
+            "mcp_client_name": "ws",
+            "tools_to_execute": [
+              "*"
+            ]
+          }
+        ]
+      }
+    ],
+    "complexity_analyzer_config": {
+      "classifier": "semantic",
+      "semantic": {
+        "provider": "ollama",
+        "embedding_model": "nomic-embed-text",
+        "timeout": "3s",
+        "min_similarity": 0,
+        "message_history_count": 1,
+        "count_toward_budgets": false,
+        "vector_store": "embedded",
+        "fallback": "none"
+      },
+      "keywords": {
+        "simple_keywords": [
+          "fix a typo in the readme",
+          "rename this variable",
+          "change a constant value",
+          "add a missing import",
+          "the result is off by one, fix it",
+          "this function returns the wrong value, fix it",
+          "a setting has no effect, the default is always used",
+          "wrong comparison operator in a condition",
+          "the unit is wrong, seconds instead of milliseconds",
+          "small bug in one function, fix it"
+        ],
+        "medium_keywords": [
+          "add input validation to this function and update the tests",
+          "implement a new endpoint with error handling",
+          "refactor this module into smaller functions",
+          "add a new option with a default value and reject bad values",
+          "handle escaping and edge cases in a parser",
+          "add a new method to an existing class with its own behaviour",
+          "change the output format and cover the edge cases"
+        ],
+        "complex_keywords": [
+          "migrate the project to a new major version of a library across many files",
+          "design a caching layer with invalidation",
+          "fix a race condition between several async workers",
+          "change a public interface used across several modules",
+          "rename a concept across the whole codebase and keep old data working",
+          "coordinate async tasks with limits, ordering and progress reporting"
+        ]
+      }
+    },
+    "routing_rules": [
+      {
+        "id": "tier-simple",
+        "name": "simple tasks to small model",
+        "cel_expression": "complexity_tier == \"SIMPLE\" && !(virtual_key_id in [\"vk-private\", \"vk-baseline\"]) && !(\"x-thrift-pinned\" in headers)",
+        "priority": 1,
+        "scope": "global",
+        "targets": [
+          {
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "gemini/gemini-3.5-flash-lite",
+          "ollama/qwen2.5-coder:7b"
+        ]
+      },
+      {
+        "id": "tier-medium",
+        "name": "medium tasks to mid model",
+        "cel_expression": "complexity_tier == \"MEDIUM\" && !(virtual_key_id in [\"vk-private\", \"vk-baseline\"]) && !(\"x-thrift-pinned\" in headers)",
+        "priority": 2,
+        "scope": "global",
+        "targets": [
+          {
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "gemini/gemini-3.5-flash",
+          "ollama/qwen2.5-coder:7b"
+        ]
+      },
+      {
+        "id": "tier-complex",
+        "name": "complex tasks to big model",
+        "cel_expression": "complexity_tier == \"COMPLEX\" && !(virtual_key_id in [\"vk-private\", \"vk-baseline\"]) && !(\"x-thrift-pinned\" in headers)",
+        "priority": 3,
+        "scope": "global",
+        "targets": [
+          {
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "gemini/gemini-3.5-flash",
+          "ollama/qwen2.5-coder:7b"
+        ]
+      }
+    ]
+  }
+}
