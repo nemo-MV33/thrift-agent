@@ -29,6 +29,8 @@
 </p>
 
 <p align="center">
+  <img src="docs/demo/bench.png" alt="Benchmark page: naive vs thrift, tokens and cost per task" width="720" />
+  <br/><br/>
   <img src="docs/demo/dashboard.png" alt="Thrift dashboard showing a live run step by step" width="720" />
 </p>
 
