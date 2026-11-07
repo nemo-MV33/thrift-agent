@@ -28,11 +28,26 @@
   <a href="#benchmark">Benchmark</a>
 </p>
 
-<!-- HERO: dashboard screenshots go here -->
+<p align="center">
+  <img src="docs/demo/dashboard.png" alt="Thrift dashboard showing a live run step by step" width="720" />
+</p>
 
 ## Results
 
-<!-- RESULTS: filled in from bench/results after the full run -->
+Partial numbers. These come from the second full run (`bench/results/run-2026-11-07T06-17-12-387Z.jsonl`), which stopped after tasks 01-06 when Groq's free daily quota ran out. Seven naive runs died on a 429 quota error and are left out, since they say nothing about the agent. The full run over all 17 tasks is still pending.
+
+| Mode | Runs | Pass | Avg tokens | Avg cost | Avg time |
+|---|---|---|---|---|---|
+| naive | 11 | 100% | 11,376 | $0.00159 | 28.7 s |
+| thrift | 18 | 100% | 1,982 | $0.00025 | 24.8 s |
+
+On these six tasks thrift used 83% fewer tokens and cost 85% less, with the same pass rate. Five of the six tasks are simple. All naive runs on the one medium task (06) hit the quota, so the naive average covers simple tasks only.
+
+Reproduce with:
+
+```bash
+cd agent && npm run summarize -- ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl
+```
 
 ## Why
 
@@ -79,9 +94,29 @@ Repos without dependencies skip the check and pay nothing. Private mode skips it
 
 <!-- FRESHNESS: stale vs thrift numbers -->
 
+We have not run tasks 15-17 in `stale` and `thrift` mode yet, so the numbers on what the check adds are still pending.
+
 ## Demo scenarios
 
-<!-- DEMO: filled in after the scenes are recorded -->
+Each scene below was recorded on the live dashboard. The numbers are from those single runs, not averages.
+
+| Scene | What happened |
+|---|---|
+| Fallback | Task 01 (percent coupon). Groq failed on step 1, so Bifrost answered with gemini-3.5-flash-lite. The agent pinned that model for step 2, which wrote the fix. 2,709 tokens, $0.00097, 2 steps |
+| Budget | A run on the booking ranges task with a tiny budget on the virtual key. Step 1 went through on gpt-oss-120b, step 2 got a 402 "Budget exceeded" from the gateway and the agent stopped cleanly |
+| Private | Task 02 (pagination) with `--private`. One step on qwen2.5-coder:7b through the `thrift-private` key, 992 tokens, $0 |
+| Approval | The task asked for `git add`, `git commit` and `git push origin main`. Each command waited for a yes or no. With push approved the run took 4 steps and 3,984 tokens. With push denied the agent stopped at that point (3 steps, 2,874 tokens, $0.00023) |
+
+<p align="center">
+  <img src="docs/demo/fallback.png" alt="Fallback to Gemini, then pinned model" width="420" />
+  <img src="docs/demo/budget.png" alt="Run stopped by a 402 budget error" width="420" />
+</p>
+<p align="center">
+  <img src="docs/demo/private.png" alt="Private run on local Ollama" width="420" />
+  <img src="docs/demo/approval.png" alt="Approval prompt for shell commands" width="420" />
+</p>
+
+The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
 
 ## Architecture
 
