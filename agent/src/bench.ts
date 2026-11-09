@@ -163,4 +163,4 @@ for (const task of tasks) {
     }
   }
 }
-console.log(`done -> ${outFile}`);
+console.log(`done -> ${path.relative(projectRoot, outFile)}`);

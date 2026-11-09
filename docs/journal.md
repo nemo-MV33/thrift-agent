@@ -185,3 +185,13 @@ The runner accepts comma-separated prefixes in `--only`. A zero-run check select
 ### Quota handling
 
 The runner now records the first failed naive run that hits a provider quota, then skips further naive attempts in that batch. Thrift runs continue. The November 7 results contain no valid naive run for task 06, so it needs a separate baseline run to complete task coverage.
+
+### Gateway smoke test and batch A
+
+Docker Desktop, Redis and Ollama started locally. Bifrost v2.5.0 downloaded its binary and started from a fresh local config. On a copy of task 01, the CLI fixed the bug and passed all three tests. The gateway fell back from Groq to gemini-3.5-flash. The run used 3,160 tokens over two steps and took 47.0 seconds. This was a smoke test and is outside the benchmark.
+
+The first background launch exited before npm wrote anything. Relaunching with `nohup`, closed stdin and `disown` left the runner alive. Batch A covers tasks 07-17 with one attempt per mode and the default pauses. Its log is `bench/results/batch-a-20261109T122643Z.log`.
+
+### Summary inputs
+
+The summary command now accepts multiple JSONL files. It keeps an existing companion summary and prints combined results to the terminal for multiple inputs. Rechecking the November 7 file still leaves out seven quota failures and gives 11,376 naive tokens and 1,982 thrift tokens per valid run. The runner now prints relative result paths in its log.

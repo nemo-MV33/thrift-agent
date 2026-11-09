@@ -1,10 +1,13 @@
-// Turns a benchmark .jsonl into a summary table and a JSON file the
-// dashboard and README can use.  npm run summarize -- bench/results/run-....jsonl
+// Summarizes one or more benchmark result files. A single input also gets
+// a companion summary file if one does not already exist.
 import { promises as fs } from "node:fs";
 
-const file = process.argv[2];
-if (!file) throw new Error("pass a results .jsonl file");
-const all = (await fs.readFile(file, "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+const files = [...new Set(process.argv.slice(2))];
+if (!files.length || files.some((file) => !file.endsWith(".jsonl"))) {
+  throw new Error("pass one or more results .jsonl files");
+}
+const inputs = await Promise.all(files.map((file) => fs.readFile(file, "utf8")));
+const all = inputs.flatMap((input) => input.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line)));
 // A run that died on a provider quota says nothing about the agent. Those are
 // reported separately and left out of every average.
 const quota = (r: any) => /\b429\b|rate limit/i.test(r.error ?? "") && !r.pass;
@@ -50,4 +53,12 @@ for (const t of tiers) {
   console.log(`${t.padEnd(8)} ${line.join("  |  ")}`);
 }
 
-await fs.writeFile(file.replace(/\.jsonl$/, ".summary.json"), JSON.stringify({ overall, byTier }, null, 2));
+if (files.length === 1) {
+  const output = files[0].replace(/\.jsonl$/, ".summary.json");
+  try {
+    await fs.writeFile(output, JSON.stringify({ overall, byTier }, null, 2), { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    console.log("Existing summary kept.");
+  }
+}
