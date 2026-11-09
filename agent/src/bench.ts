@@ -31,7 +31,10 @@ const modes = opt("modes", "naive,thrift").split(",");
 const pauseMs = Number(opt("pause", "20000"));
 
 type Step = { model: string; prompt: number; completion: number; fallback: boolean; cacheHit?: boolean; requestId: string | null };
-type AgentOut = { tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[]; error?: string | null; freshness?: any };
+type AgentOut = {
+  tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[];
+  error?: string | null; freshness?: any; freshnessFailed?: boolean;
+};
 
 async function resetWorkspace(repo: string) {
   // Keep the directory itself: Bifrost's MCP server has it open as its root.
@@ -146,6 +149,7 @@ for (const task of tasks) {
         requestIds: out?.usage.map((u) => u.requestId).filter(Boolean) ?? [],
         crashed: out === null,
         error: out?.error ?? null,
+        ...(out?.freshnessFailed ? { freshnessFailed: true } : {}),
         freshness: out?.freshness
           ? { searches: out.freshness.searches, tokens: out.freshness.tokens, verdicts: out.freshness.verdicts }
           : null,

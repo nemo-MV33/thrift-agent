@@ -183,23 +183,25 @@ let tokens = 0;
 const usage: { model: string; prompt: number; completion: number; fallback: boolean; cacheHit: boolean; requestId: string | null }[] = [];
 const started = Date.now();
 let freshness: Awaited<ReturnType<typeof checkFreshness>> = null;
+let freshnessFailed = false;
 if (fresh) {
   // Claim extraction and judging are short JSON jobs, the small model is enough.
   freshness = await checkFreshness(workspace, task, async (msgs) => {
-    // An empty include list keeps Bifrost from attaching the workspace tools:
-    // these calls must answer in JSON, not go read files.
+    // The name "none" matches no MCP client. These calls only return JSON.
     const r = await gatewayChat(
       { model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
       { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
     );
     usage.push(r.record);
-    return { content: String(r.message.content ?? ""), tokens: r.usage.total_tokens ?? 0, requestId: r.requestId };
+    const used = r.usage.total_tokens ?? 0;
+    tokens += used;
+    return { content: String(r.message.content ?? ""), tokens: used, requestId: r.requestId };
   }).catch((e) => {
+    freshnessFailed = true;
     console.log(red(`freshness check skipped: ${e.message}`));
     return null;
   });
   if (freshness) {
-    tokens += freshness.tokens;
     emit("freshness", { verdicts: freshness.verdicts, searches: freshness.searches, tokens: freshness.tokens, ms: freshness.ms });
     for (const v of freshness.verdicts)
       console.log(gray(`[fresh] ${v.library}: ${v.status} (${v.freshness}) ${v.claim}`));
@@ -369,5 +371,5 @@ for (let step = 1; step <= 15 && !stopped; step++) {
 
 console.log(gray(`\ntotal tokens: ${tokens}, steps: ${steps}`));
 emit("run_end", { tokens, steps, finished, stopped, error, ms: Date.now() - started });
-if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage, freshness }));
+if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage, freshness, freshnessFailed }));
 rl.close();
