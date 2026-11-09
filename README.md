@@ -36,19 +36,18 @@
 
 ## Results
 
-Partial numbers. These come from the second full run (`bench/results/run-2026-11-07T06-17-12-387Z.jsonl`), which stopped after tasks 01-06 when Groq's free daily quota ran out. Seven naive runs died on a 429 quota error and are left out, since they say nothing about the agent. The full run over all 17 tasks is still pending.
+The Groq comparison has valid results for four shared tasks (01-04, all simple). Seven naive attempts hit the provider quota. Those attempts left tasks 05 and 06 without a valid naive result.
 
-| Mode | Runs | Pass | Avg tokens | Avg cost | Avg time |
-|---|---|---|---|---|---|
+| Mode | Valid runs | Pass rate | Avg tokens | Avg model cost | Avg time |
+|---|---:|---:|---:|---:|---:|
 | naive | 11 | 100% | 11,376 | $0.00159 | 28.7 s |
-| thrift | 18 | 100% | 1,982 | $0.00025 | 24.8 s |
+| thrift | 12 | 100% | 1,621 | $0.00023 | 1.7 s |
 
-On these six tasks thrift used 83% fewer tokens and cost 85% less, with the same pass rate. Five of the six tasks are simple. All naive runs on the one medium task (06) hit the quota, so the naive average covers simple tasks only.
-
-Reproduce with:
+Thrift used 86% fewer tokens per run on the shared tasks. The cost average excludes one thrift run with missing gateway cost. These figures come from the November 7 batch.
 
 ```bash
-cd agent && npm run summarize -- ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl
+cd agent
+npm run summarize -- ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl
 ```
 
 ## Why
@@ -160,7 +159,7 @@ You need Node.js 22, Docker (for Redis) and Ollama with `qwen2.5-coder:7b` and `
 cp .env.example .env
 ```
 
-Fill in the keys, then:
+Fill in the keys. Start Docker Desktop and Ollama (use `ollama serve` if Ollama is not running), then run these commands from the repo root:
 
 ```bash
 docker compose up -d
@@ -171,17 +170,28 @@ ollama pull qwen2.5-coder:7b && ollama pull nomic-embed-text
 ```
 
 ```bash
-cd agent && npm install && cd ..
+npm ci --prefix agent
+npm ci --prefix dashboard
+mkdir -p sandbox/demo-app
+cp -R bench/tasks/01-cart-coupon/repo/. sandbox/demo-app/
 ```
 
 ```bash
 scripts/gateway.sh --fresh
 ```
 
-The gateway UI is at http://localhost:8080. Run a task:
+The gateway UI is at http://localhost:8080. Start the dashboard in a separate terminal:
 
 ```bash
-cd agent && set -a && . ../.env && set +a && npx tsx src/index.ts "Fix the failing test in cart.js"
+npm run dev --prefix dashboard
+```
+
+Open the local URL printed by Vite to watch the run (usually http://localhost:5173). In another terminal, run the task against the copy of the cart fixture:
+
+```bash
+cd agent
+set -a; . ../.env; set +a
+npm start -- "Prices come out wrong when a percent coupon is applied at checkout. Fix it."
 ```
 
 Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check.
@@ -198,7 +208,7 @@ Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent
 
 ## Benchmark
 
-17 small Node repos with failing tests in `bench/tasks/`: 5 simple, 7 medium, 3 complex, plus 3 that depend on current library versions. Every task has a reference solution in `bench/solutions/` and was checked to fail before and pass after it. Test files are restored before judging, so an agent can't pass by editing them.
+There are 17 small Node repos with failing tests in `bench/tasks/` (7 simple, 7 medium and 3 complex). Three tasks depend on current library versions. Every task has a reference solution in `bench/solutions/` and was checked to fail before and pass after it. The runner restores protected test files before judging.
 
 | Mode | What it is |
 |---|---|
@@ -207,14 +217,19 @@ Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent
 | `stale` | Thrift with the freshness check off |
 
 ```bash
-cd agent && npm run bench -- --runs 3
+cd agent
+set -a; . ../.env; set +a
+npm run bench -- --runs 3
 ```
 
 ```bash
+npm run bench -- --only 15,16,17 --modes stale,thrift --runs 3
 npm run summarize -- ../bench/results/<file>.jsonl
 ```
 
-Every run is kept in `bench/results/`. The build journal with every number and problem we hit along the way is in [docs/journal.md](docs/journal.md).
+The runner replaces the contents of `sandbox/demo-app` for each attempt. Keep your own files outside it. Each batch writes a new JSONL file in `bench/results/`. Pass multiple JSONL paths to `summarize` to combine batches from the same experiment.
+
+See [docs/journal.md](docs/journal.md) for the run history.
 
 ## Team
 
