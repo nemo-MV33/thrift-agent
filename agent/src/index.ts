@@ -18,8 +18,10 @@ const naive = args.includes("--naive");
 const asJson = args.includes("--json");
 // Private repos never leave the machine, so no web lookups there either.
 const fresh = !naive && !isPrivate && !args.includes("--no-fresh");
-const workspace = path.resolve(process.env.THRIFT_WORKSPACE ?? fileURLToPath(new URL("../../sandbox/demo-app", import.meta.url)));
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const workspace = path.resolve(root, process.env.THRIFT_WORKSPACE ?? "sandbox/demo-app");
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
+const gitFollowUp = /\bgit\s+(?:add|commit|push)\b|\bthen\s+(?:commit|push)\b/i.test(task);
 
 if (!task) {
   console.error('usage: npm start -- "<task>" [--private] [--yes]');
@@ -44,7 +46,7 @@ const headers: Record<string, string> = { "Content-Type": "application/json", "x
 if (process.env.THRIFT_CACHE_KEY) headers["x-bf-cache-key"] = process.env.THRIFT_CACHE_KEY;
 // Live events for the dashboard. Fire and forget: the agent must never wait
 // on, or fail because of, the dashboard.
-const EVENTS = process.env.THRIFT_EVENTS_URL ?? "http://localhost:5199/events";
+const EVENTS = process.env.THRIFT_EVENTS_URL ?? "http://127.0.0.1:5199/events";
 const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const mode = isPrivate ? "private" : naive ? "naive" : "thrift";
 function emit(type: string, data: Record<string, unknown> = {}) {
@@ -175,8 +177,11 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
 const SYSTEM = naive
   ? "You are a coding agent working inside a small repository. Use the tools to look at files, " +
     "make the change, then run the tests. Paths are relative to the repo root. Keep answers short."
-  : "Coding agent. The relevant files are already below, don't read them again. " +
-    "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
+  : gitFollowUp
+    ? "Coding agent. Use the supplied files first. Edit and test when the task asks for a code change. " +
+      "Complete the requested Git actions before replying. Paths are relative to the repo root. Keep answers short."
+    : "Coding agent. The relevant files are already below, don't read them again. " +
+      "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
 
 emit("run_start", { task, workspace: path.basename(workspace) });
 let tokens = 0;
@@ -334,7 +339,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     // Tests green after an edit means the job is done. Only the project's own
     // test script counts: "cat test.js" or "node -e ..." exiting 0 says nothing. Asking the model to
     // say so in a sentence would cost one more full round trip.
-    if (toolName === "run_command" && wrote && isTestRun(input.command) && String(result.content).startsWith("exit 0")) {
+    if (!gitFollowUp && toolName === "run_command" && wrote && isTestRun(input.command) && String(result.content).startsWith("exit 0")) {
       console.log("\ntests pass after the edit, done");
       finished = true;
       break;
@@ -360,12 +365,13 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     const result = await execTool(call);
     messages.push({ role: "assistant", content: null, tool_calls: [call] }, result);
     emit("tool", { step, tool: "run_command", args: '{"command":"npm test"}', auto: true, ok: String(result.content).startsWith("exit 0") });
-    if (String(result.content).startsWith("exit 0")) {
+    const passed = String(result.content).startsWith("exit 0");
+    if (passed && !gitFollowUp) {
       console.log("\ntests pass after the edit, done");
       finished = true;
       break;
     }
-    console.log(gray("  tests still fail, back to the model"));
+    console.log(gray(passed ? "  tests pass, continuing with the requested Git actions" : "  tests still fail, back to the model"));
   }
 }
 

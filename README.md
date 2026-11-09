@@ -124,6 +124,8 @@ The check caught the obsolete Zod accessor in two attempts, but the baseline als
 
 The lower recorded thrift average on task 17 includes early failures on Ollama. All three stale attempts failed at the 15-step cap on Gemini Flash-Lite. With different coding models and incomplete checks, this batch cannot isolate a token savings effect from Tavily.
 
+After this batch, the verifier began requiring a source URL and an excerpt present in the retrieved text. Claims without this evidence are marked unknown, and their corrections stay out of the coding prompt. The stricter verifier still needs a new benchmark.
+
 Raw data: [November 9 stale/thrift runs](bench/results/run-2026-11-09T12-37-18-207Z.jsonl).
 
 ## Demo scenarios
@@ -227,6 +229,10 @@ npm start -- "Prices come out wrong when a percent coupon is applied at checkout
 
 Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check.
 
+To work on another checkout, set `THRIFT_WORKSPACE` in `.env` to its path. Relative paths start from the Thrift repo root. Restart the gateway with `scripts/gateway.sh --fresh` after changing workspaces. This resets the local Bifrost databases. Use the default workspace for the benchmark.
+
+After moving the Thrift checkout, `scripts/gateway.sh --config-only` rewrites the generated MCP paths without touching the running gateway or its databases.
+
 ### Environment
 
 | Variable | Needed | Purpose |
@@ -236,6 +242,7 @@ Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent
 | `TAVILY_API_KEY` | for the freshness check | Web lookups |
 | `BIFROST_SETUP_TOKEN` | yes | Admin API access for logs and cost |
 | `THRIFT_VK_DEV`, `THRIFT_VK_PRIVATE`, `THRIFT_VK_BASELINE` | yes | Virtual key values, any random strings |
+| `THRIFT_WORKSPACE` | optional | Workspace for the CLI and MCP server, defaults to `sandbox/demo-app` |
 
 ## Benchmark
 

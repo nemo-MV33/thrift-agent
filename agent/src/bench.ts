@@ -16,6 +16,9 @@ const projectRoot = path.resolve(here, "../..");
 const tasksDir = path.join(projectRoot, "bench/tasks");
 const resultsDir = path.join(projectRoot, "bench/results");
 const workspace = path.join(projectRoot, "sandbox/demo-app");
+if (process.env.THRIFT_WORKSPACE && path.resolve(projectRoot, process.env.THRIFT_WORKSPACE) !== workspace) {
+  throw new Error("The benchmark needs the default sandbox/demo-app workspace. Restart the gateway with the default workspace first.");
+}
 const GATEWAY = process.env.BIFROST_URL ?? "http://localhost:8080";
 
 const argv = process.argv.slice(2);

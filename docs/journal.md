@@ -239,3 +239,15 @@ The two missing reports were on task 17. The first attempt returned one successf
 There was no pass-rate gain in this batch. The Zod baseline already knew the working API in its Gemini attempts, while the freshness check either missed or misstated relevant Express changes. Both modes also moved between coding models. The lower recorded thrift average on task 17 came with failures and cannot isolate Tavily's effect.
 
 The README and the pitch now separate the shared-task Groq comparison, the fallback coverage, and the Tavily experiment. The dashboard screenshot shows all 18 freshness rows. The seven-slide deck was checked in the browser and as a rendered PDF. The next full comparison needs naive and thrift on tasks 05-17 after Groq access returns. Start with one attempt per mode and keep the default pauses.
+
+### Submission review and demo capture
+
+The public HackCulture FAQ requires an existing public GitHub repository and a PPT upload. A deployed app and demo link are optional. The deck needs the problem, solution, technical architecture, implementation and prototype, including the role of each partner in a combined entry. The public page lists November 15 at 11:59 PM for submission and November 29 for judging. It gives no deadline timezone label or accepted file extensions. The submission notes record the form path, judging criteria and evidence for each requirement.
+
+The Git checkout already points to the team's public GitHub repository. Regenerating the gateway config uses the current checkout and keeps local paths out of the tracked template. Tested a path containing spaces, quotes and an ampersand. The CLI and gateway now resolve relative workspace paths from the same root. The benchmark rejects a custom workspace before touching the fixture.
+
+The Git follow-up path now keeps going after green tests when the task requests Git operations. A mock gateway test covered a plain fix stopping on green and a fix continuing to a rejected push. The denied command never reached execution. The MCP stdio test also verified that symlinks cannot send file tools outside the workspace and that shell commands do not inherit gateway credentials. The event server and Redis now listen only on loopback.
+
+After the Express judge errors, the freshness checker began requiring a URL and a verbatim excerpt present in the retrieved evidence before accepting a verdict. An isolated test kept a supported correction and downgraded an invented URL and fabricated quote to unknown. This change still needs a paired benchmark.
+
+The demo uses screen recordings of the dashboard, archival Bifrost fallback, budget and approval runs, and a newly recorded private pagination run. The private run used 974 tokens in one Ollama step and took the tests from 0/2 to 2/2. The capture includes the scoped benchmark and a Zod source example. The video and PNG frames are local submission files. Groq's models endpoint still returns HTTP 403.

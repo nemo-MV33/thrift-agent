@@ -16,7 +16,7 @@ async function walk(root: string, dir = root, out: string[] = []): Promise<strin
     if (SKIP.has(e.name) || e.name.startsWith(".")) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) await walk(root, full, out);
-    else out.push(path.relative(root, full));
+    else if (e.isFile()) out.push(path.relative(root, full));
   }
   return out;
 }

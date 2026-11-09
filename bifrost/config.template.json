@@ -81,7 +81,7 @@
           "command": "${THRIFT_ROOT}/agent/node_modules/.bin/tsx",
           "args": [
             "${THRIFT_ROOT}/agent/src/workspace-server.ts",
-            "${THRIFT_ROOT}/sandbox/demo-app"
+            "${THRIFT_WORKSPACE}"
           ]
         },
         "tools_to_execute": [

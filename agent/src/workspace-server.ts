@@ -9,15 +9,29 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 
-const root = path.resolve(process.argv[2] ?? process.cwd());
+const root = await fs.realpath(process.argv[2] ?? process.cwd());
 const run = promisify(execFile);
+const commandEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !/^(GROQ_API_KEY|GEMINI_API_KEY|TAVILY_API_KEY|BIFROST_SETUP_TOKEN|THRIFT_VK_.*)$/.test(name)),
+);
 
-function inside(p: string): string {
-  const full = path.resolve(root, p);
-  if (full !== root && !full.startsWith(root + path.sep)) {
-    throw new Error(`path escapes workspace: ${p}`);
-  }
+function contained(full: string, requested: string): string {
+  const relative = path.relative(root, full);
+  if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative))
+    throw new Error(`path escapes workspace: ${requested}`);
   return full;
+}
+
+async function inside(p: string, create = false): Promise<string> {
+  const full = contained(path.resolve(root, p), p);
+  const missing = create && !(await fs.lstat(full).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+    return null;
+  }));
+  const resolved = missing
+    ? path.join(await fs.realpath(path.dirname(full)), path.basename(full))
+    : await fs.realpath(full);
+  return contained(resolved, p);
 }
 
 const str = (description: string) => ({ type: "string", description });
@@ -54,7 +68,7 @@ async function walk(dir: string, out: string[] = []): Promise<string[]> {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) await walk(full, out);
-    else out.push(path.relative(root, full));
+    else if (entry.isFile()) out.push(path.relative(root, full));
   }
   return out;
 }
@@ -62,15 +76,15 @@ async function walk(dir: string, out: string[] = []): Promise<string[]> {
 async function call(name: string, args: Record<string, string>): Promise<string> {
   switch (name) {
     case "list_files":
-      return (await walk(inside(args.dir ?? "."))).join("\n");
+      return (await walk(await inside(args.dir ?? "."))).join("\n");
     case "read_file":
-      return fs.readFile(inside(args.path), "utf8");
+      return fs.readFile(await inside(args.path), "utf8");
     case "write_file":
-      await fs.writeFile(inside(args.path), args.content);
+      await fs.writeFile(await inside(args.path, true), args.content);
       return `wrote ${args.content.length} chars to ${args.path}`;
     case "run_command":
       try {
-        const { stdout, stderr } = await run("sh", ["-c", args.command], { cwd: root, timeout: 60_000 });
+        const { stdout, stderr } = await run("sh", ["-c", args.command], { cwd: root, env: commandEnv, timeout: 60_000 });
         return `exit 0\n${stdout}${stderr}`.slice(0, 4000);
       } catch (e: any) {
         return `exit ${e.code ?? 1}\n${e.stdout ?? ""}${e.stderr ?? ""}`.slice(0, 4000);
