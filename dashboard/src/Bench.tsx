@@ -20,8 +20,6 @@ function agg(rows: BenchRow[]): Agg | null {
   };
 }
 
-const isFreshness = (r: BenchRow) => /^1[567]-/.test(r.task) || r.freshness != null || r.mode === "stale";
-
 function pickDefault(files: BenchFile[]) {
   return [...files].sort((a, b) => b.rows - a.rows || Number(b.hasFreshness) - Number(a.hasFreshness) || b.mtime - a.mtime)[0];
 }
@@ -59,7 +57,7 @@ export function BenchPage() {
           <span className="eyebrow-label">Naive vs thrift</span>
           <h1 className="display">Benchmark</h1>
           <p className="page-sub">
-            Small Node repos with failing tests, each solved by two agents. Naive sends every step to one big model with the full history. Thrift routes each call to the cheapest model that fits and keeps context short.
+            Small Node repos with failing tests. Naive sends the full history to one model. Thrift routes once per task and keeps context short. Stale runs Thrift with the Tavily check off.
           </p>
         </div>
         <label className="select">
@@ -78,22 +76,28 @@ export function BenchPage() {
   );
 }
 
-// A run that died on a provider quota (Groq 429) says nothing about the
-// agent, so it is left out everywhere, same as in agent/src/summarize.ts.
-const hitQuota = (r: BenchRow) => !r.pass && /\b429\b|rate limit/i.test(String((r as any).error ?? ""));
+// Keep provider failures out of the comparison, as in agent/src/summarize.ts.
+const providerFailure = (r: BenchRow) =>
+  !r.pass && /\b429\b|rate limit|all configured keys returned permanent per-key errors/i.test(r.error ?? "");
 
 function BenchBody({ rows: all }: { rows: BenchRow[] }) {
-  const rows = all.filter((r) => !hitQuota(r));
+  const rows = all.filter((r) => !providerFailure(r));
   const skipped = all.length - rows.length;
   const main = rows.filter((r) => r.mode !== "stale");
-  const naive = agg(main.filter((r) => r.mode === "naive"));
-  const thrift = agg(main.filter((r) => r.mode === "thrift"));
+  const naiveTasks = new Set(main.filter((r) => r.mode === "naive").map((r) => r.task));
+  const thriftTasks = new Set(main.filter((r) => r.mode === "thrift").map((r) => r.task));
+  const shared = new Set([...naiveTasks].filter((task) => thriftTasks.has(task)));
+  const naive = agg(main.filter((r) => r.mode === "naive" && shared.has(r.task)));
+  const thrift = agg(main.filter((r) => r.mode === "thrift" && shared.has(r.task)));
   const tiers = [...new Set(main.map((r) => r.tier))].sort((a, b) => ["simple", "medium", "complex"].indexOf(a) - ["simple", "medium", "complex"].indexOf(b));
-  const fresh = rows.filter(isFreshness);
+  const staleTasks = new Set(rows.filter((r) => r.mode === "stale").map((r) => r.task));
+  const fresh = rows.filter((r) => staleTasks.has(r.task));
+  const headline = naive && thrift;
 
   return (
     <>
-      <Headline naive={naive} thrift={thrift} />
+      {headline && <Headline naive={naive} thrift={thrift} taskCount={shared.size} />}
+      {fresh.length > 0 && <FreshSection rows={fresh} />}
       <div className="bench-grid">
         <section className="panel">
           <header className="panel-head">
@@ -102,19 +106,20 @@ function BenchBody({ rows: all }: { rows: BenchRow[] }) {
           </header>
           <TokenChart rows={rows} />
         </section>
-        <section className="panel">
-          <header className="panel-head">
-            <h2>By tier</h2>
-          </header>
-          <TierTable rows={main} tiers={tiers} />
-        </section>
+        {headline && (
+          <section className="panel">
+            <header className="panel-head">
+              <h2>By tier</h2>
+            </header>
+            <TierTable rows={main.filter((r) => shared.has(r.task))} tiers={tiers.filter((tier) => main.some((r) => r.tier === tier && shared.has(r.task)))} />
+          </section>
+        )}
       </div>
-      {fresh.length > 0 && <FreshSection rows={fresh} />}
       <section className="panel">
         <header className="panel-head">
           <h2>Per task</h2>
           <span className="muted">
-            {rows.length} runs{skipped > 0 && `, ${skipped} left out (provider quota hit, not an agent failure)`}
+            {rows.length} runs{skipped > 0 && `, ${skipped} excluded for provider errors`}
           </span>
         </header>
         <TaskTable rows={rows} />
@@ -128,7 +133,7 @@ function delta(a: number | null | undefined, b: number | null | undefined) {
   return (b - a) / a;
 }
 
-function Headline({ naive, thrift }: { naive: Agg | null; thrift: Agg | null }) {
+function Headline({ naive, thrift, taskCount }: { naive: Agg; thrift: Agg; taskCount: number }) {
   const cells: { label: string; n: string; t: string; d: number | null; lowerBetter: boolean; abs?: boolean }[] = [
     { label: "Pass rate", n: fmtPct(naive?.passRate), t: fmtPct(thrift?.passRate), d: naive && thrift ? thrift.passRate - naive.passRate : null, lowerBetter: false, abs: true },
     { label: "Avg tokens", n: fmtInt(naive?.tokens), t: fmtInt(thrift?.tokens), d: delta(naive?.tokens, thrift?.tokens), lowerBetter: true },
@@ -140,13 +145,13 @@ function Headline({ naive, thrift }: { naive: Agg | null; thrift: Agg | null }) 
   return (
     <div className="headline">
       <div className="hero">
-        <span className="hero-tag">Thrift saves</span>
+        <span className="hero-tag">Thrift token change</span>
         <div className="hero-num">
           {td == null ? "-" : `${td > 0 ? "+" : ""}${(td * 100).toFixed(0)}%`}
           <small>tokens</small>
         </div>
         <p className="hero-sub">
-          {fmtInt(naive?.tokens)} to {fmtInt(thrift?.tokens)} tokens per task on average
+          {fmtInt(naive.tokens)} to {fmtInt(thrift.tokens)} tokens per run on {taskCount} shared {taskCount === 1 ? "task" : "tasks"}
           {cd != null ? `, cost ${cd > 0 ? "+" : ""}${(cd * 100).toFixed(0)}%` : ""}.
         </p>
       </div>
@@ -268,8 +273,7 @@ function Marks({ rows }: { rows: BenchRow[] }) {
 
 function TaskTable({ rows }: { rows: BenchRow[] }) {
   const tasks = useMemo(() => [...new Set(rows.map((r) => r.task))].sort(), [rows]);
-  const hasStale = rows.some((r) => r.mode === "stale");
-  const modes: Mode[] = hasStale ? ["naive", "thrift", "stale"] : ["naive", "thrift"];
+  const modes = MODES.filter((mode) => rows.some((r) => r.mode === mode));
   return (
     <div className="table-wrap">
       <table className="tbl">
@@ -334,11 +338,13 @@ function FreshSection({ rows }: { rows: BenchRow[] }) {
           <span className="kpi-label">Stale pass rate</span>
           <span className="kpi-value">{fmtPct(stale?.passRate)}</span>
           <span className="muted">{stale ? `${stale.pass} of ${stale.runs}` : "no stale runs"}</span>
+          {stale && <span className="muted">{fmtInt(stale.tokens)} avg tokens</span>}
         </div>
         <div className="fresh-kpi">
           <span className="kpi-label">Thrift pass rate</span>
           <span className="kpi-value">{fmtPct(thrift?.passRate)}</span>
           <span className="muted">{thrift ? `${thrift.pass} of ${thrift.runs}` : "no thrift runs"}</span>
+          {thrift && <span className="muted">{fmtInt(thrift.tokens)} avg tokens</span>}
         </div>
         <ul className="fresh-tasks">
           {tasks.map((t) => (

@@ -11,10 +11,14 @@ const all = inputs.flatMap((input) => input.split("\n").filter((line) => line.tr
 // A run that died on a provider quota says nothing about the agent. Those are
 // reported separately and left out of every average.
 const quota = (r: any) => /\b429\b|rate limit/i.test(r.error ?? "") && !r.pass;
-const rows = all.filter((r) => !quota(r));
-if (all.length !== rows.length) console.log(`left out ${all.length - rows.length} runs that hit a provider quota\n`);
+const unavailable = (r: any) => /all configured keys returned permanent per-key errors/i.test(r.error ?? "") && !r.pass;
+const rows = all.filter((r) => !quota(r) && !unavailable(r));
+const quotaFailures = all.filter(quota).length;
+const providerFailures = all.length - rows.length - quotaFailures;
+if (quotaFailures) console.log(`left out ${quotaFailures} runs that hit a provider quota`);
+if (providerFailures) console.log(`left out ${providerFailures} runs rejected by the configured provider`);
 
-const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 function stats(sel: any[]) {
   return {
     runs: sel.length,
@@ -23,7 +27,7 @@ function stats(sel: any[]) {
     // Runs whose cost never showed up in the logs are left out, not counted as free.
     cost: mean(sel.filter((r) => r.cost != null).map((r) => r.cost)),
     costMissing: sel.filter((r) => r.cost == null).length,
-    seconds: mean(sel.map((r) => (r.ms ?? 0) / 1000)),
+    seconds: mean(sel.filter((r) => r.ms != null).map((r) => r.ms / 1000)),
   };
 }
 
@@ -34,22 +38,33 @@ const byTier = Object.fromEntries(
   tiers.map((t) => [t, Object.fromEntries(modes.map((m) => [m, stats(rows.filter((r) => r.mode === m && r.tier === t))]))]),
 );
 
-const pct = (a: number, b: number) => (b ? `${(((a - b) / b) * 100).toFixed(0)}%` : "n/a");
+const pct = (a: number | null, b: number | null) => (a != null && b ? `${(((a - b) / b) * 100).toFixed(0)}%` : "n/a");
+const fixed = (value: number | null, digits: number) => value?.toFixed(digits) ?? "n/a";
+const pass = (rate: number | null) => rate == null ? "n/a" : `${(rate * 100).toFixed(0)}%`;
 console.log("mode     runs  pass   tokens   cost($)    sec");
 for (const m of modes) {
   const s = overall[m];
   console.log(
-    `${m.padEnd(8)} ${String(s.runs).padStart(4)}  ${(s.passRate * 100).toFixed(0).padStart(3)}%  ` +
-      `${s.tokens.toFixed(0).padStart(7)}  ${s.cost.toFixed(5).padStart(8)}  ${s.seconds.toFixed(1).padStart(5)}`,
+    `${m.padEnd(8)} ${String(s.runs).padStart(4)}  ${pass(s.passRate).padStart(4)}  ` +
+      `${fixed(s.tokens, 0).padStart(7)}  ${fixed(s.cost, 5).padStart(8)}  ${fixed(s.seconds, 1).padStart(5)}`,
   );
 }
 if (overall.naive && overall.thrift) {
-  const n = overall.naive;
-  const t = overall.thrift;
-  console.log(`\ntokens ${pct(t.tokens, n.tokens)}, cost ${pct(t.cost, n.cost)}, time ${pct(t.seconds, n.seconds)}`);
+  const naiveTasks = new Set(rows.filter((r) => r.mode === "naive").map((r) => r.task));
+  const thriftTasks = new Set(rows.filter((r) => r.mode === "thrift").map((r) => r.task));
+  const shared = [...naiveTasks].filter((task) => thriftTasks.has(task));
+  if (shared.length) {
+    const n = stats(rows.filter((r) => r.mode === "naive" && shared.includes(r.task)));
+    const t = stats(rows.filter((r) => r.mode === "thrift" && shared.includes(r.task)));
+    console.log(`\n${shared.length} shared tasks (${n.runs} naive runs, ${t.runs} thrift runs)`);
+    console.log(`tokens ${pct(t.tokens, n.tokens)}, cost ${pct(t.cost, n.cost)}, time ${pct(t.seconds, n.seconds)}`);
+  }
 }
 for (const t of tiers) {
-  const line = modes.map((m) => `${m} ${(byTier[t][m].passRate * 100).toFixed(0)}% ${byTier[t][m].tokens.toFixed(0)}tok`);
+  const line = modes.map((m) => {
+    const s = byTier[t][m];
+    return s.runs ? `${m} ${pass(s.passRate)} ${fixed(s.tokens, 0)} tokens` : `${m} n/a`;
+  });
   console.log(`${t.padEnd(8)} ${line.join("  |  ")}`);
 }
 

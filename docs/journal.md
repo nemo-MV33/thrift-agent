@@ -195,3 +195,15 @@ The first background launch exited before npm wrote anything. Relaunching with `
 ### Summary inputs
 
 The summary command now accepts multiple JSONL files. It keeps an existing companion summary and prints combined results to the terminal for multiple inputs. Rechecking the November 7 file still leaves out seven quota failures and gives 11,376 naive tokens and 1,982 thrift tokens per valid run. The runner now prints relative result paths in its log.
+
+The first two launches did not produce result rows. Starting the third in its own process session kept it alive after the shell returned. Groq returned HTTP 403 on the models endpoint twice and Bifrost surfaced it as a 502 on the first naive attempt. The VPN tunnel must stay as it is. We stopped batch A after task 07, which passed in thrift on Gemini Flash with 2,624 tokens and $0.01649 in gateway cost. The raw rows are in `run-2026-11-09T12-27-03-719Z.jsonl`. The remaining thrift attempts run in a separate file. The stale comparison follows them under the same fallback conditions.
+
+### Submission checks
+
+A clean archive installed both npm lockfiles, built the dashboard and reproduced the cart fixture's starting state (two tests pass, one fails). The credential scan found no matches for current secret values or common credential formats in reachable Git blobs. The current tree has no machine-specific absolute paths. An old revision of `bifrost/config.json` still contains local paths in Git history, from before the switch to a generated config.
+
+The benchmark dashboard now shows the stale and thrift pass rates and average tokens together. It only shows naive comparison cards when both naive and thrift rows are present.
+
+Rechecking coverage showed that task 05 also has no valid naive run. The old 83% figure pooled all available runs, including tasks with only thrift results. On shared tasks 01-04, naive passed 11/11 with 11,376 tokens, $0.00159 and 28.7 seconds per run. Thrift passed 12/12 with 1,621 tokens, $0.00023 and 1.7 seconds per run. One thrift cost is missing. The shared-task token and cost differences both round to 86%. The dashboard and summary now use shared tasks for the naive comparison while retaining all runs in the coverage tables.
+
+In the fallback batch, task 12 passed in four Gemini Flash steps with 16,455 tokens. Later steps each resent roughly 4,100-4,400 prompt tokens, compared with 1,429 on the first step. The COMPLEX rule initially chose Groq 120B, then the first request fell back and pinned Gemini. Task 13 failed after Groq and Gemini both errored and Bifrost moved to Ollama. Task 14 passed on Gemini Flash-Lite with 5,722 tokens. We have no valid naive result for these tasks to compare with.
