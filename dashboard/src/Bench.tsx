@@ -49,12 +49,14 @@ export function BenchPage() {
 
   if (failed) return <Empty title="Event server is not reachable" body="Benchmark files are served by the dashboard server. Start it with npm run dev." />;
   if (files && files.length === 0) return <Empty title="No benchmark results yet" body="Run the benchmark and its results file will appear here." command="cd agent && npm run bench -- --runs 3" />;
+  const modes = new Set(rows?.filter((r) => !providerFailure(r)).map((r) => r.mode));
+  const label = modes.has("stale") ? "Stale vs thrift" : modes.has("naive") ? "Naive vs thrift" : "Thrift runs";
 
   return (
     <div className="bench">
       <div className="bench-bar">
         <div className="bench-title">
-          <span className="eyebrow-label">Naive vs thrift</span>
+          <span className="eyebrow-label">{label}</span>
           <h1 className="display">Benchmark</h1>
           <p className="page-sub">
             Small Node repos with failing tests. Naive sends the full history to one model. Thrift routes once per task and keeps context short. Stale runs Thrift with the Tavily check off.
@@ -87,9 +89,10 @@ function BenchBody({ rows: all }: { rows: BenchRow[] }) {
   const naiveTasks = new Set(main.filter((r) => r.mode === "naive").map((r) => r.task));
   const thriftTasks = new Set(main.filter((r) => r.mode === "thrift").map((r) => r.task));
   const shared = new Set([...naiveTasks].filter((task) => thriftTasks.has(task)));
-  const naive = agg(main.filter((r) => r.mode === "naive" && shared.has(r.task)));
-  const thrift = agg(main.filter((r) => r.mode === "thrift" && shared.has(r.task)));
-  const tiers = [...new Set(main.map((r) => r.tier))].sort((a, b) => ["simple", "medium", "complex"].indexOf(a) - ["simple", "medium", "complex"].indexOf(b));
+  const paired = main.filter((r) => shared.has(r.task));
+  const naive = agg(paired.filter((r) => r.mode === "naive"));
+  const thrift = agg(paired.filter((r) => r.mode === "thrift"));
+  const tiers = ["simple", "medium", "complex"].filter((tier) => paired.some((r) => r.tier === tier));
   const staleTasks = new Set(rows.filter((r) => r.mode === "stale").map((r) => r.task));
   const fresh = rows.filter((r) => staleTasks.has(r.task));
   const headline = naive && thrift;
@@ -98,7 +101,7 @@ function BenchBody({ rows: all }: { rows: BenchRow[] }) {
     <>
       {headline && <Headline naive={naive} thrift={thrift} taskCount={shared.size} />}
       {fresh.length > 0 && <FreshSection rows={fresh} />}
-      <div className="bench-grid">
+      <div className={headline ? "bench-grid" : undefined}>
         <section className="panel">
           <header className="panel-head">
             <h2>Tokens per task</h2>
@@ -111,7 +114,7 @@ function BenchBody({ rows: all }: { rows: BenchRow[] }) {
             <header className="panel-head">
               <h2>By tier</h2>
             </header>
-            <TierTable rows={main.filter((r) => shared.has(r.task))} tiers={tiers.filter((tier) => main.some((r) => r.tier === tier && shared.has(r.task)))} />
+            <TierTable rows={paired} tiers={tiers} />
           </section>
         )}
       </div>
