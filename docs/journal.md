@@ -181,3 +181,7 @@ Two things we noticed. When the task is a code fix, the agent ends as soon as th
 ### Benchmark task selection
 
 The runner accepts comma-separated prefixes in `--only`. A zero-run check selected exactly three tasks for `07, 08,09` and one for `03`. This lets us resume a batch without rerunning tasks that already have results.
+
+### Quota handling
+
+The runner now records the first failed naive run that hits a provider quota, then skips further naive attempts in that batch. Thrift runs continue. The November 7 results contain no valid naive run for task 06, so it needs a separate baseline run to complete task coverage.

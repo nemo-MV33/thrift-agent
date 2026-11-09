@@ -31,7 +31,7 @@ const modes = opt("modes", "naive,thrift").split(",");
 const pauseMs = Number(opt("pause", "20000"));
 
 type Step = { model: string; prompt: number; completion: number; fallback: boolean; cacheHit?: boolean; requestId: string | null };
-type AgentOut = { tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[]; freshness?: any };
+type AgentOut = { tokens: number; steps: number; stopped: boolean; ms: number; usage: Step[]; error?: string | null; freshness?: any };
 
 async function resetWorkspace(repo: string) {
   // Keep the directory itself: Bifrost's MCP server has it open as its root.
@@ -111,6 +111,7 @@ await fs.mkdir(resultsDir, { recursive: true });
 const outFile = path.join(resultsDir, `run-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
 console.log(`${tasks.length} tasks x ${modes.length} modes x ${runs} runs -> ${path.relative(projectRoot, outFile)}`);
 
+let naiveQuotaHit = false;
 for (const task of tasks) {
   const meta = JSON.parse(await fs.readFile(path.join(tasksDir, task, "task.json"), "utf8"));
   const repo = path.join(tasksDir, task, "repo");
@@ -121,6 +122,7 @@ for (const task of tasks) {
     await run("npm", ["install", "--silent"], { cwd: repo });
   for (let r = 1; r <= runs; r++) {
     for (const mode of modes) {
+      if (mode === "naive" && naiveQuotaHit) continue;
       await resetWorkspace(repo);
       const out = await runAgent(meta.prompt, mode, `bench-${Date.now()}-${task}-${mode}-${r}`);
       // Put the original tests back before judging.
@@ -143,7 +145,7 @@ for (const task of tasks) {
         cacheHits: out?.usage.filter((u) => u.cacheHit).length ?? 0,
         requestIds: out?.usage.map((u) => u.requestId).filter(Boolean) ?? [],
         crashed: out === null,
-        error: (out as any)?.error ?? null,
+        error: out?.error ?? null,
         freshness: out?.freshness
           ? { searches: out.freshness.searches, tokens: out.freshness.tokens, verdicts: out.freshness.verdicts }
           : null,
@@ -153,6 +155,10 @@ for (const task of tasks) {
         `${task.padEnd(28)} ${mode.padEnd(6)} #${r} ${pass ? "PASS" : "FAIL"} ` +
           `tokens=${row.tokens} cost=${cost?.toFixed(5)} ${row.models.join(",")}`,
       );
+      if (mode === "naive" && !pass && /\b429\b|rate limit/i.test(row.error ?? "")) {
+        naiveQuotaHit = true;
+        console.log("Naive hit a provider quota. Skipping the remaining naive runs in this batch.");
+      }
       await new Promise((ok) => setTimeout(ok, mode === "naive" ? pauseMs : pauseMs / 4));
     }
   }
