@@ -1,0 +1,24 @@
+
+> bench
+> tsx src/bench.ts --only 15,16,17 --modes stale,thrift --runs 3
+
+3 tasks x 2 modes x 3 runs -> bench/results/run-2026-11-09T12-37-18-207Z.jsonl
+15-zod-signup-errors         stale  #1 PASS tokens=1893 cost=0.00871 gemini/gemini-3.5-flash
+15-zod-signup-errors         thrift #1 PASS tokens=2673 cost=0.01061 gemini/gemini-3.5-flash-lite,gemini/gemini-3.5-flash
+15-zod-signup-errors         stale  #2 PASS tokens=4133 cost=0.01283 gemini/gemini-3.5-flash
+15-zod-signup-errors         thrift #2 PASS tokens=2864 cost=0.01148 gemini/gemini-3.5-flash-lite,gemini/gemini-3.5-flash
+15-zod-signup-errors         stale  #3 FAIL tokens=1255 cost=undefined ollama/qwen2.5-coder:7b
+15-zod-signup-errors         thrift #3 FAIL tokens=1948 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+16-express-api-404           stale  #1 FAIL tokens=4689 cost=undefined gemini/gemini-3.5-flash,ollama/qwen2.5-coder:7b
+16-express-api-404           thrift #1 FAIL tokens=8135 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+16-express-api-404           stale  #2 FAIL tokens=3103 cost=undefined ollama/qwen2.5-coder:7b
+16-express-api-404           thrift #2 FAIL tokens=2750 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+16-express-api-404           stale  #3 FAIL tokens=3842 cost=undefined ollama/qwen2.5-coder:7b
+16-express-api-404           thrift #3 FAIL tokens=4656 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+17-express-files-path        stale  #1 FAIL tokens=38095 cost=0.01389 gemini/gemini-3.5-flash-lite
+17-express-files-path        thrift #1 FAIL tokens=37883 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+17-express-files-path        stale  #2 FAIL tokens=38032 cost=0.01387 gemini/gemini-3.5-flash-lite
+17-express-files-path        thrift #2 FAIL tokens=3673 cost=undefined ollama/qwen2.5-coder:7b
+17-express-files-path        stale  #3 FAIL tokens=38063 cost=0.01387 gemini/gemini-3.5-flash-lite
+17-express-files-path        thrift #3 FAIL tokens=34972 cost=undefined gemini/gemini-3.5-flash-lite,ollama/qwen2.5-coder:7b
+done -> bench/results/run-2026-11-09T12-37-18-207Z.jsonl

@@ -1,0 +1,58 @@
+{
+  "overall": {
+    "stale": {
+      "runs": 9,
+      "passRate": 0.2222222222222222,
+      "tokens": 14789.444444444445,
+      "cost": 0.012634140000000002,
+      "costMissing": 4,
+      "seconds": 31.227
+    },
+    "thrift": {
+      "runs": 9,
+      "passRate": 0.2222222222222222,
+      "tokens": 11061.555555555555,
+      "cost": 0.011044650000000001,
+      "costMissing": 7,
+      "seconds": 35.81022222222222
+    }
+  },
+  "byTier": {
+    "simple": {
+      "stale": {
+        "runs": 6,
+        "passRate": 0.3333333333333333,
+        "tokens": 3152.5,
+        "cost": 0.01077075,
+        "costMissing": 4,
+        "seconds": 33.99433333333334
+      },
+      "thrift": {
+        "runs": 6,
+        "passRate": 0.3333333333333333,
+        "tokens": 3837.6666666666665,
+        "cost": 0.011044650000000001,
+        "costMissing": 4,
+        "seconds": 31.331666666666667
+      }
+    },
+    "medium": {
+      "stale": {
+        "runs": 3,
+        "passRate": 0,
+        "tokens": 38063.333333333336,
+        "cost": 0.013876400000000002,
+        "costMissing": 0,
+        "seconds": 25.692333333333334
+      },
+      "thrift": {
+        "runs": 3,
+        "passRate": 0,
+        "tokens": 25509.333333333332,
+        "cost": null,
+        "costMissing": 3,
+        "seconds": 44.76733333333333
+      }
+    }
+  }
+}

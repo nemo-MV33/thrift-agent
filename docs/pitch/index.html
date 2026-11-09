@@ -464,20 +464,22 @@ code { font-size: .82em; }
       <tbody><tr><td>Naive</td><td>11</td><td>100%</td><td>11,376</td><td>$0.00159</td></tr>
       <tr><td>Thrift</td><td>12</td><td>100%</td><td>1,621</td><td>$0.00023</td></tr></tbody>
     </table>
-    <p class="note">Shared tasks 01-04 are all simple. Quota failures are excluded. One thrift run lacked a logged cost.</p>
+    <p class="note">Shared tasks 01-04 are all simple. One thrift cost is missing. In a separate fallback batch, thrift passed 10 of 11 tasks in the follow-up batch. Groq returned HTTP 403, so those tasks have no naive comparison.</p>
     <p class="note">Source: <code>bench/results/run-2026-11-07T06-17-12-387Z.jsonl</code></p>
     <footer class="folio"><span>THRIFT</span><span>06 / 07</span></footer>
   </section>
 
-  <!-- Benchmark protocol -->
-  <section class="slide dark" aria-label="Benchmark protocol">
-    <p class="eyebrow">Benchmark protocol</p>
-    <h2>Every attempt starts from the same fixture.</h2>
-    <div class="columns">
-      <article class="card"><h3>Test the patch</h3><p>Each attempt starts from a fresh workspace copy. The runner restores protected tests before scoring and isolates the cache per attempt.</p></article>
-      <article class="card"><h3>Inspect each run</h3><p>The dashboard shows per-task results, model choices, tokens and cost. The raw runs are checked into the repository.</p></article>
-    </div>
-    <p class="note">Groq returned HTTP 403 during the November 9 batch. The full naive comparison is pending.</p>
+  <!-- Freshness comparison -->
+  <section class="slide" aria-label="Freshness results">
+    <p class="eyebrow">Tavily comparison / tasks 15-17</p>
+    <h2>Both modes passed 2 of 9.</h2>
+    <table class="table">
+      <thead><tr><th>Mode</th><th>Passing runs</th><th>Recorded avg tokens</th></tr></thead>
+      <tbody><tr><td>Stale</td><td>2 / 9</td><td>14,789</td></tr>
+      <tr><td>Thrift</td><td>2 / 9</td><td>11,062</td></tr></tbody>
+    </table>
+    <p class="note">The check caught the old Zod accessor twice. Express verdicts contained errors, and two checks stopped early. Coding models varied across attempts, so the token gap cannot be attributed to Tavily.</p>
+    <p class="note">Source: <code>bench/results/run-2026-11-09T12-37-18-207Z.jsonl</code></p>
     <footer class="folio"><span>THRIFT</span><span>07 / 07</span></footer>
   </section>
 </div>

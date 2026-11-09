@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo/bench.png" alt="Benchmark page: naive vs thrift, tokens and cost per task" width="720" />
+  <img src="docs/demo/bench.png" alt="Benchmark page: stale and thrift pass rates and token use" width="720" />
   <br/><br/>
   <img src="docs/demo/dashboard.png" alt="Thrift dashboard showing a live run step by step" width="720" />
 </p>
@@ -109,9 +109,22 @@ Before the first coding step, Thrift:
 
 Repos without dependencies skip the check and pay nothing. Private mode skips it too, so the task never leaves the machine.
 
-<!-- FRESHNESS: stale vs thrift numbers -->
+### Freshness results
 
-We have not run tasks 15-17 in `stale` and `thrift` mode yet, so the numbers on what the check adds are still pending.
+Both modes passed 2 of 9 runs on tasks 15-17 using the fallback chain. The table uses the token counts recorded by the runner.
+
+| Task | Stale pass | Thrift pass | Stale avg tokens | Thrift avg tokens |
+|---|---:|---:|---:|---:|
+| 15 / Zod error access | 2/3 | 2/3 | 2,427 | 2,495 |
+| 16 / Express API 404 | 0/3 | 0/3 | 3,878 | 5,180 |
+| 17 / Express file path | 0/3 | 0/3 | 38,063 | 25,509 |
+| All | 2/9 | 2/9 | 14,789 | 11,062 |
+
+The check caught the obsolete Zod accessor in two attempts, but the baseline also passed those attempts. On Express, the judge suggested invalid wildcard patterns or accepted the wrong parameter type. Two checks stopped on a gateway error. One of those runs omitted 284 tokens from a successful call before the error. Future runs count those tokens and mark the incomplete check.
+
+The lower recorded thrift average on task 17 includes early failures on Ollama. All three stale attempts failed at the 15-step cap on Gemini Flash-Lite. With different coding models and incomplete checks, this batch cannot isolate a token savings effect from Tavily.
+
+Raw data: [November 9 stale/thrift runs](bench/results/run-2026-11-09T12-37-18-207Z.jsonl).
 
 ## Demo scenarios
 
@@ -135,7 +148,7 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 
 The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
 
-The [pitch deck](docs/pitch/index.html) opens in a browser. The [demo script](docs/demo/script.md) covers the recording order and narration.
+The pitch deck is available as [HTML](docs/pitch/index.html) and [PDF](docs/pitch/Thrift.pdf). The [demo script](docs/demo/script.md) covers the recording order and narration.
 
 ## Architecture
 

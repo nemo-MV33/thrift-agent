@@ -221,3 +221,21 @@ Across the 11 fallback attempts on tasks 07-17, thrift passed 10/11, averaging 6
 With the comparable November 7 source included for coverage, thrift has 28 passing runs out of 29 across all 17 tasks, averaging 3,870 tokens. Naive has valid runs on four tasks. The pooled thrift average mixes Groq-era and fallback runs. Compare against naive only on their shared tasks.
 
 Batch B started in `batch-b-20261109T123717Z.log` and writes `run-2026-11-09T12-37-18-207Z.jsonl`. The runner keeps the existing fallback chain and interleaves stale and thrift attempts on each task.
+
+Task 15 finished at 2/3 in both modes. Stale averaged 2,427 tokens and thrift 2,495. Thrift made four searches and flagged the old accessor in the first two attempts. On the third, claim extraction focused on the return shape of `safeParse` and missed the accessor. In each mode Gemini Flash solved the first two attempts and Ollama failed the third after fallback. Both Ollama attempts have missing gateway cost.
+
+Batch B task 16 exposed another judge error. The first thrift attempt caught the bare wildcard and suggested `/api/(.*)`, which the installed Express also rejects. A local registration check confirmed that `/api/*rest` works and both old forms throw. The second attempt extracted no claims and made no searches. Both attempts failed after falling back to Ollama.
+
+Task 16 finished at 0/3 in both modes. Stale averaged 3,878 tokens and thrift 5,180, with five Tavily search attempts across the three thrift runs. Every coding attempt ended on Ollama. Task 17's first stale attempt failed on Gemini Flash-Lite after using 38,095 tokens.
+
+The first stale attempt on task 17 hit the 15-step cap. The event log shows repeated writes followed by failed tests. Prompt size grew from roughly 2,100 tokens at step 5 to 3,515 at step 15 as the tool calls accumulated. In this run the long retry loop, rather than the missing check's own token overhead, explains the 38,095 tokens.
+
+### Batch B complete
+
+Stale and thrift each passed 2 of 9 runs. Stale recorded 14,789 tokens per run and thrift 11,062. Task 17 was 0/3 in both modes, with 38,063 stale tokens and 25,509 thrift tokens per run. All three stale attempts hit the step cap on Gemini Flash-Lite. Thrift switched to Ollama during or before coding in all three attempts. Seven of nine thrift attempts returned a freshness report, one with zero claims. Across those reports the check attempted ten searches.
+
+The two missing reports were on task 17. The first attempt returned one successful freshness model call before the judge failed. Its request ID was still in the raw row, and the gateway log shows 284 tokens that were absent from the recorded total. The second had no successful freshness model request. The third check completed but marked the wildcard's return type as a string. The raw rows stay as recorded. The CLI now counts tokens as each freshness model call returns and records failed checks separately. A mock gateway test covered a judge failure after claim extraction and a successful check, confirming that partial tokens are retained and complete checks are counted once.
+
+There was no pass-rate gain in this batch. The Zod baseline already knew the working API in its Gemini attempts, while the freshness check either missed or misstated relevant Express changes. Both modes also moved between coding models. The lower recorded thrift average on task 17 came with failures and cannot isolate Tavily's effect.
+
+The README and the pitch now separate the shared-task Groq comparison, the fallback coverage, and the Tavily experiment. The dashboard screenshot shows all 18 freshness rows. The seven-slide deck was checked in the browser and as a rendered PDF. The next full comparison needs naive and thrift on tasks 05-17 after Groq access returns. Start with one attempt per mode and keep the default pauses.
