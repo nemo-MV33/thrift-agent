@@ -1,0 +1,76 @@
+{
+  "overall": {
+    "naive": {
+      "runs": 9,
+      "passRate": 1,
+      "tokens": 11645.666666666666,
+      "cost": 0.0020366166666666665,
+      "costMissing": 0,
+      "seconds": 34.718888888888884
+    },
+    "thrift": {
+      "runs": 9,
+      "passRate": 1,
+      "tokens": 3598.8888888888887,
+      "cost": 0.0007631833333333333,
+      "costMissing": 0,
+      "seconds": 9.246111111111112
+    }
+  },
+  "byTier": {
+    "simple": {
+      "naive": {
+        "runs": 1,
+        "passRate": 1,
+        "tokens": 8040,
+        "cost": 0.0015102,
+        "costMissing": 0,
+        "seconds": 5.945
+      },
+      "thrift": {
+        "runs": 1,
+        "passRate": 1,
+        "tokens": 1204,
+        "cost": 0.0003786,
+        "costMissing": 0,
+        "seconds": 1.588
+      }
+    },
+    "medium": {
+      "naive": {
+        "runs": 6,
+        "passRate": 1,
+        "tokens": 10186.666666666666,
+        "cost": 0.001894275,
+        "costMissing": 0,
+        "seconds": 29.9395
+      },
+      "thrift": {
+        "runs": 6,
+        "passRate": 1,
+        "tokens": 1867,
+        "cost": 0.00044435,
+        "costMissing": 0,
+        "seconds": 3.5703333333333327
+      }
+    },
+    "complex": {
+      "naive": {
+        "runs": 2,
+        "passRate": 1,
+        "tokens": 17825.5,
+        "cost": 0.0027268500000000003,
+        "costMissing": 0,
+        "seconds": 63.444
+      },
+      "thrift": {
+        "runs": 2,
+        "passRate": 1,
+        "tokens": 9992,
+        "cost": 0.0019119749999999998,
+        "costMissing": 0,
+        "seconds": 30.1025
+      }
+    }
+  }
+}

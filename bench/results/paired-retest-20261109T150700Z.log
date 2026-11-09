@@ -1,0 +1,23 @@
+
+> bench
+> tsx src/bench.ts --only 05,06,07,08,09,10,11,12,13,14,15,16,17 --modes naive,thrift --runs 1
+
+13 tasks x 2 modes x 1 runs -> bench/results/run-2026-11-09T15-07-00-878Z.jsonl
+05-rate-limit-window         naive  #1 PASS tokens=8040 cost=0.00151 groq/openai/gpt-oss-120b
+05-rate-limit-window         thrift #1 PASS tokens=1204 cost=0.00038 groq/openai/gpt-oss-120b
+06-invoice-net-days          naive  #1 PASS tokens=7374 cost=0.00137 groq/openai/gpt-oss-120b
+06-invoice-net-days          thrift #1 PASS tokens=1456 cost=0.00022 groq/openai/gpt-oss-20b
+07-csv-quoted-fields         naive  #1 PASS tokens=11937 cost=0.00197 groq/openai/gpt-oss-120b
+07-csv-quoted-fields         thrift #1 PASS tokens=1435 cost=0.00046 groq/openai/gpt-oss-120b
+08-date-range-merge          naive  #1 PASS tokens=13963 cost=0.00255 groq/openai/gpt-oss-120b
+08-date-range-merge          thrift #1 PASS tokens=1680 cost=0.00057 groq/openai/gpt-oss-120b
+09-inventory-reserve         naive  #1 PASS tokens=5907 cost=0.00109 groq/openai/gpt-oss-120b
+09-inventory-reserve         thrift #1 PASS tokens=1286 cost=0.00039 groq/openai/gpt-oss-120b
+10-duration-format           naive  #1 PASS tokens=7154 cost=0.00141 groq/openai/gpt-oss-120b
+10-duration-format           thrift #1 PASS tokens=3078 cost=0.00055 groq/openai/gpt-oss-20b
+11-emitter-once              naive  #1 PASS tokens=14785 cost=0.00297 groq/openai/gpt-oss-120b
+11-emitter-once              thrift #1 PASS tokens=2267 cost=0.00047 groq/openai/gpt-oss-20b
+12-rename-user-name          naive  #1 PASS tokens=17920 cost=0.00277 groq/openai/gpt-oss-120b
+12-rename-user-name          thrift #1 PASS tokens=10573 cost=0.00203 groq/openai/gpt-oss-120b
+13-catalog-cache             naive  #1 PASS tokens=17731 cost=0.00268 groq/openai/gpt-oss-120b
+13-catalog-cache             thrift #1 PASS tokens=9411 cost=0.00179 groq/openai/gpt-oss-120b

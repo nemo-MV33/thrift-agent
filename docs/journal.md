@@ -265,3 +265,11 @@ After the tunnel was disabled, a direct Tavily search returned HTTP 200. Direct 
 The freshness rerun uses three attempts per mode on tasks 15-17 and writes `run-2026-11-09T14-53-34-479Z.jsonl`. The paired run on tasks 05-17 waits for it to finish to avoid competing for the Groq quota. Both runs keep the default pauses and use separate output files.
 
 The dashboard can show the paired suite from a manifest of raw run files. This keeps the source rows in their original batches. The runner now starts the agent directly with Node so its timeout targets the agent process rather than an npm wrapper.
+
+The first two paired attempts on task 17 passed in both freshness modes on Groq 20B. The second used 8,928 tokens and four coding steps in stale mode, compared with 23,015 tokens and seven coding steps in thrift. Freshness accounted for 3,944 of those thrift tokens. The additional coding steps explain the rest of the difference better than search overhead alone.
+
+The freshness rerun finished at 9/9 in each mode. Stale averaged 6,753 tokens and thrift averaged 10,054. Across five thrift runs, 15 searches returned results without provider errors. Six claims were accepted as current and nine were left unknown. No corrections entered the coding prompt. Freshness model calls averaged 3,513 tokens per thrift run. Coding calls alone averaged 6,542, versus 6,753 for stale. One stale attempt used a Gemini fallback, so the model mix limits conclusions about cost and timing. This rerun showed no pass-rate gain.
+
+The paired run stopped after task 13 when the local services went away. Its 18 completed rows all passed. Bifrost, Ollama and the dashboard were restarted, and the runner resumed at task 14 in a new file. A fixture check independently confirmed that all 17 start with failing tests and pass after applying the reference patch.
+
+On task 16, thrift used 7,394 tokens and naive used 5,245. Thrift's 2,258 freshness tokens explain the gap. On task 17, naive returned a provider 429 at the fourteenth request. The gateway identified Groq's 8,000 tokens-per-minute limit. The raw row is retained and excluded from the comparison. One repeat is queued after the thrift attempt and a cooldown.

@@ -1,0 +1,24 @@
+
+> bench
+> tsx src/bench.ts --only 15,16,17 --modes stale,thrift --runs 3
+
+3 tasks x 2 modes x 3 runs -> bench/results/run-2026-11-09T14-53-34-479Z.jsonl
+15-zod-signup-errors         stale  #1 PASS tokens=1364 cost=0.00037 groq/openai/gpt-oss-120b
+15-zod-signup-errors         thrift #1 PASS tokens=5641 cost=0.00143 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+15-zod-signup-errors         stale  #2 PASS tokens=4619 cost=0.00093 groq/openai/gpt-oss-120b
+15-zod-signup-errors         thrift #2 PASS tokens=7203 cost=0.00148 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+15-zod-signup-errors         stale  #3 PASS tokens=3404 cost=0.00077 groq/openai/gpt-oss-120b
+15-zod-signup-errors         thrift #3 PASS tokens=3625 cost=0.00095 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+16-express-api-404           stale  #1 PASS tokens=3382 cost=0.00093 groq/openai/gpt-oss-120b
+16-express-api-404           thrift #1 PASS tokens=7760 cost=0.00192 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+16-express-api-404           stale  #2 PASS tokens=3335 cost=0.00084 groq/openai/gpt-oss-120b
+16-express-api-404           thrift #2 PASS tokens=10312 cost=0.00229 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+16-express-api-404           stale  #3 PASS tokens=5796 cost=0.00135 groq/openai/gpt-oss-120b
+16-express-api-404           thrift #3 PASS tokens=7334 cost=0.00169 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+17-express-files-path        stale  #1 PASS tokens=9677 cost=0.00125 groq/openai/gpt-oss-20b
+17-express-files-path        thrift #1 PASS tokens=12600 cost=0.00187 groq/openai/gpt-oss-20b
+17-express-files-path        stale  #2 PASS tokens=8928 cost=0.00105 groq/openai/gpt-oss-20b
+17-express-files-path        thrift #2 PASS tokens=23015 cost=0.00286 groq/openai/gpt-oss-20b
+17-express-files-path        stale  #3 PASS tokens=20270 cost=0.02324 groq/openai/gpt-oss-20b,gemini/gemini-3.5-flash
+17-express-files-path        thrift #3 PASS tokens=12999 cost=0.00197 groq/openai/gpt-oss-20b
+done -> bench/results/run-2026-11-09T14-53-34-479Z.jsonl
