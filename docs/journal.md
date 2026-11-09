@@ -273,3 +273,9 @@ The freshness rerun finished at 9/9 in each mode. Stale averaged 6,753 tokens an
 The paired run stopped after task 13 when the local services went away. Its 18 completed rows all passed. Bifrost, Ollama and the dashboard were restarted, and the runner resumed at task 14 in a new file. A fixture check independently confirmed that all 17 start with failing tests and pass after applying the reference patch.
 
 On task 16, thrift used 7,394 tokens and naive used 5,245. Thrift's 2,258 freshness tokens explain the gap. On task 17, naive returned a provider 429 at the fourteenth request. The gateway identified Groq's 8,000 tokens-per-minute limit. The raw row is retained and excluded from the comparison. One repeat is queued after the thrift attempt and a cooldown.
+
+After the cooldown, naive passed task 17 in a separate run with 14,188 tokens and nine steps. Thrift passed with 20,993 tokens, including 4,063 for freshness, and seven coding steps. Both solved the fixture. Thrift used more tokens on this task even after accounting for its freshness calls.
+
+The pooled paired suite covers all 17 tasks. Naive passed 24/24 valid attempts, averaging 11,126 tokens, $0.00176 and 29.9 seconds. Thrift passed 31/31, averaging 3,579 tokens, $0.00064 and 22.2 seconds. That is 68% fewer tokens per valid run. Eight provider errors are excluded. Four thrift rows have missing costs and are excluded only from the cost average. The manifest lists the four source batches so the dashboard and README use the same rows.
+
+The presentation handoff is a seven-slide brief with exact English copy, a layout plan and PNG crops of the real UI. The team will assemble the PowerPoint file. The revised demo uses the paired dashboard and the fresh Tavily rerun.

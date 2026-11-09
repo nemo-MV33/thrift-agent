@@ -1,7 +1,7 @@
 <h1 align="center">Thrift</h1>
 
 <p align="center">
-  <strong>A coding agent that gets the job done on the fewest tokens.</strong>
+  <strong>A coding agent that spends fewer tokens on the fix.</strong>
 </p>
 
 <p align="center">
@@ -29,57 +29,55 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo/benchmark-shared.png" alt="Benchmark dashboard comparing naive and thrift on four shared tasks" width="900" />
+  <img src="docs/demo/benchmark-shared.png" alt="Benchmark dashboard comparing naive and thrift on 16 shared tasks" width="900" />
 </p>
 
 ## Results
 
-The Groq comparison has valid results for four shared tasks (01-04, all simple). Seven naive attempts hit the provider quota. Those attempts left tasks 05 and 06 without a valid naive result.
+On 17 shared tasks, Thrift used **68% fewer tokens per run**. Naive passed 24/24 valid runs and Thrift passed 31/31.
 
-| Mode | Valid runs | Pass rate | Avg tokens | Avg model cost | Avg time |
+| Mode | Passed / valid runs | Avg tokens | Avg model cost | Avg time |
+|---|---:|---:|---:|---:|
+| naive | 24/24 | 11,126 | $0.00176 | 29.9 s |
+| thrift | 31/31 | 3,579 | $0.00064 | 22.2 s |
+
+The comparison pools the November 7 runs on tasks 01-06 and the November 9 runs on tasks 05-17. It reports means per valid run, so earlier tasks with more repeats carry more weight. The benchmark excludes 8 attempts stopped by provider errors and omits 4 missing gateway costs from the cost averages. The earlier fallback and freshness experiments are recorded separately in the [journal](docs/journal.md). Thrift used more tokens on tasks 16 and 17. Both involved the freshness check, and task 17 also used more coding tokens.
+
+### By difficulty
+
+| Tier | Tasks | Naive pass | Naive avg tokens | Thrift pass | Thrift avg tokens |
 |---|---:|---:|---:|---:|---:|
-| naive | 11 | 100% | 11,376 | $0.00159 | 28.7 s |
-| thrift | 12 | 100% | 1,621 | $0.00023 | 1.7 s |
+| Simple | 7 | 14/14 | 10,630 | 18/18 | 2,595 |
+| Medium | 7 | 7/7 | 10,758 | 10/10 | 3,900 |
+| Complex | 3 | 3/3 | 14,299 | 3/3 | 8,416 |
 
-Thrift used 86% fewer tokens per run on the shared tasks. The cost average excludes one thrift run with missing gateway cost. These figures come from the November 7 batch.
-
-### Coverage by difficulty
-
-This table combines the November 7 batch and the November 9 fallback batch. Cells report tasks covered, passing runs over valid runs, and average tokens per run.
-
-| Tier | Tasks | Naive | Thrift |
-|---|---:|---|---|
-| Simple | 7 | 4 tasks, 11/11 pass, 11,376 tokens | 7 tasks, 17/17 pass, 2,447 tokens |
-| Medium | 7 | Pending | 7 tasks, 9/9 pass, 4,910 tokens |
-| Complex | 3 | Pending | 3 tasks, 2/3 pass, 8,818 tokens |
-| All | 17 | 4 tasks, 11/11 pass, 11,376 tokens | 17 tasks, 28/29 pass, 3,870 tokens |
-
-Groq returned HTTP 403 on November 9, so the baseline stopped after the first attempt. Of tasks 07-17, ten passed on Gemini. Task 13 failed on Ollama after Gemini also errored. The fallback batch averaged 6,960 tokens.
+Reproduce the comparison with the source files:
 
 ```bash
 cd agent
 npm run summarize -- \
   ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl \
-  ../bench/results/run-2026-11-09T12-27-03-719Z.jsonl \
-  ../bench/results/run-2026-11-09T12-28-21-480Z.jsonl
+  ../bench/results/run-2026-11-09T15-07-00-878Z.jsonl \
+  ../bench/results/run-2026-11-09T15-28-44-567Z.jsonl \
+  ../bench/results/run-2026-11-09T15-38-08-261Z.jsonl
 ```
 
 ## Why
 
-Most coding agents send the whole conversation to one big model on every step. On a two line bug fix that means listing files, reading them one by one, writing, running tests and then a closing sentence, each step paying again for everything before it. Most of those tokens buy nothing.
+The benchmark baseline sends the full history to one model on every turn. Even a small fix can take separate turns to list files, read them, make an edit and run tests. Each turn sends the previous work back to the model.
 
-Thrift treats tokens as a budget. Easy tasks go to a small model, the files the task needs are in the first prompt, old tool output is cut, and the agent stops the moment the tests go green.
+Thrift sends relevant files in the first prompt and trims old tool output. It runs tests after an edit and stops when they pass, unless the task also requests Git actions.
 
 ## How it saves tokens
 
 | Technique | Where | What it saves |
 |---|---|---|
 | Complexity routing | Bifrost complexity analyzer + CEL routing rules | Simple tasks run on gpt-oss-20b instead of gpt-oss-120b |
-| One routing decision per task | `agent/src/index.ts` | The first request carries only the task. Later steps are pinned to that model, so test output never gets classified as a "medium" task |
+| One routing decision per task | `agent/src/index.ts` | The gateway classifies the task message. Later steps stay on the responding model. |
 | Context up front | `agent/src/context.ts` | Relevant files ranked and sent in the first prompt, no list and read round trips |
 | History trimming | `agent/src/context.ts` | Old tool output becomes a one line stub, and a file's old copy is dropped once the model writes a new one |
-| Agent runs the tests | `agent/src/index.ts` | After an edit the agent runs `npm test` itself and stops when it passes, skipping two model calls |
-| Semantic cache | Bifrost `semantic_cache` plugin on Redis | Repeated requests come back in about a millisecond for free |
+| Agent runs the tests | `agent/src/index.ts` | Thrift runs `npm test` after an edit and can stop without another model call. |
+| Semantic cache | Bifrost `semantic_cache` plugin on Redis | Repeated requests can reuse cached responses. Each benchmark attempt uses a separate cache key. |
 
 ## What Bifrost does
 
@@ -103,28 +101,24 @@ Before the first coding step, Thrift:
 1. reads the installed package versions from `node_modules`,
 2. asks a small model which facts about those versions the task depends on,
 3. checks each one with a Tavily search,
-4. scores it from 0 (out of date) to 1 (still true) and writes the correct usage into the context.
+4. scores each claim as outdated (0), unknown (0.5) or current (1), and adds supported corrections to the context.
 
 Repos without dependencies skip the check and pay nothing. Private mode skips it too, so the task never leaves the machine.
 
 ### Freshness results
 
-Both modes passed 2 of 9 runs on tasks 15-17 using the fallback chain. The table uses the token counts recorded by the runner.
+The November 9 rerun used the stricter evidence check on tasks 15-17. Both modes passed 9/9. Stale is Thrift with freshness disabled.
 
 | Task | Stale pass | Thrift pass | Stale avg tokens | Thrift avg tokens |
 |---|---:|---:|---:|---:|
-| 15 / Zod error access | 2/3 | 2/3 | 2,427 | 2,495 |
-| 16 / Express API 404 | 0/3 | 0/3 | 3,878 | 5,180 |
-| 17 / Express file path | 0/3 | 0/3 | 38,063 | 25,509 |
-| All | 2/9 | 2/9 | 14,789 | 11,062 |
+| 15-zod-signup-errors | 3/3 | 3/3 | 3,129 | 5,490 |
+| 16-express-api-404 | 3/3 | 3/3 | 4,171 | 8,469 |
+| 17-express-files-path | 3/3 | 3/3 | 12,958 | 16,205 |
+| All | 9/9 | 9/9 | 6,753 | 10,054 |
 
-The check caught the obsolete Zod accessor in two attempts, but the baseline also passed those attempts. On Express, the judge suggested invalid wildcard patterns or accepted the wrong parameter type. Two checks stopped on a gateway error. One of those runs omitted 284 tokens from a successful call before the error. Future runs count those tokens and mark the incomplete check.
+The check ran 15 successful searches across 5 of 9 thrift runs. The judge accepted 6 claims as current and left 9 unknown. It added no corrections in this batch. Freshness calls averaged 3,513 tokens per thrift run. There was no pass-rate gain, and checking the evidence increased token use. One stale run fell back to Gemini, so the recorded cost gap also reflects provider choice.
 
-The lower recorded thrift average on task 17 includes early failures on Ollama. All three stale attempts failed at the 15-step cap on Gemini Flash-Lite. With different coding models and incomplete checks, this batch cannot isolate a token savings effect from Tavily.
-
-After this batch, the verifier began requiring a source URL and an excerpt present in the retrieved text. Claims without this evidence are marked unknown, and their corrections stay out of the coding prompt. The stricter verifier still needs a new benchmark.
-
-See the [freshness dashboard](docs/demo/bench.png) and the [November 9 stale/thrift runs](bench/results/run-2026-11-09T12-37-18-207Z.jsonl).
+See the [freshness dashboard](docs/demo/bench.png) and [raw runs](bench/results/run-2026-11-09T14-53-34-479Z.jsonl).
 
 ## Demo scenarios
 
@@ -134,7 +128,7 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 |---|---|
 | Fallback | Task 01 (percent coupon). Groq failed on step 1, so Bifrost answered with gemini-3.5-flash-lite. The agent pinned that model for step 2, which wrote the fix. 2,709 tokens, $0.00097, 2 steps |
 | Budget | A run on the booking ranges task with a tiny budget on the virtual key. Step 1 went through on gpt-oss-120b, step 2 got a 402 "Budget exceeded" from the gateway and the agent stopped cleanly |
-| Private | Task 02 (pagination) with `--private`. One step on qwen2.5-coder:7b through the `thrift-private` key, 992 tokens, $0 |
+| Private | Task 02 (pagination) with `--private`. One step on qwen2.5-coder:7b through the `thrift-private` key, 973 tokens, $0 |
 | Approval | The task asked for `git add`, `git commit` and `git push origin main`. Each command waited for a yes or no. With push approved the run took 4 steps and 3,984 tokens. With push denied the agent stopped at that point (3 steps, 2,874 tokens, $0.00023) |
 
 <p align="center">
@@ -148,28 +142,20 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 
 The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
 
-The pitch deck is available as [HTML](docs/pitch/index.html) and [PDF](docs/pitch/Thrift.pdf). The [demo script](docs/demo/script.md) covers the recording order and narration.
+The [submission notes](docs/submission.md) cover the presentation and the [demo script](docs/demo/script.md) describes the recording.
 
 ## Architecture
 
-```
-            task
-              |
-        +-----v------+        events         +-------------+
-        |   agent    | --------------------> |  dashboard  |
-        | (Node, TS) |                       | Vite, React |
-        +-----+------+                       +------+------+
-              |  chat + tool calls                  | logs, cost
-        +-----v---------------------------------------v---+
-        |                     Bifrost                      |
-        |  complexity router · routing rules · fallbacks   |
-        |  virtual keys · budgets · semantic cache · MCP   |
-        +--+-----------+-----------+-----------+----------+
-           |           |           |           |
-         Groq       Gemini      Ollama     MCP server
-     gpt-oss-20b  3.5 flash   qwen2.5-   (workspace tools)
-     gpt-oss-120b             coder:7b
-                                            Tavily <- freshness check
+```mermaid
+flowchart LR
+    Task["Task and workspace"] --> CLI["Thrift CLI"]
+    CLI -->|"Model and tool requests"| Bifrost["Bifrost gateway"]
+    CLI -->|"Version claims"| Tavily["Tavily Search"]
+    CLI -->|"Run events"| Dashboard["Local dashboard"]
+    Bifrost -->|"Routing and cost logs"| Dashboard
+    Bifrost -->|"Route or fall back"| Models["Groq / Gemini / Ollama"]
+    Bifrost -->|"Approved calls"| MCP["MCP workspace tools"]
+    Bifrost -->|"Cache"| Redis["Redis"]
 ```
 
 | Part | Path | Role |

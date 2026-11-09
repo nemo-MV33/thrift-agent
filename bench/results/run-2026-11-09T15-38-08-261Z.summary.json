@@ -1,0 +1,24 @@
+{
+  "overall": {
+    "naive": {
+      "runs": 1,
+      "passRate": 1,
+      "tokens": 14188,
+      "cost": 0.00248325,
+      "costMissing": 0,
+      "seconds": 54.049
+    }
+  },
+  "byTier": {
+    "medium": {
+      "naive": {
+        "runs": 1,
+        "passRate": 1,
+        "tokens": 14188,
+        "cost": 0.00248325,
+        "costMissing": 0,
+        "seconds": 54.049
+      }
+    }
+  }
+}

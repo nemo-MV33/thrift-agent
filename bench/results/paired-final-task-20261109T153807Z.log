@@ -1,0 +1,7 @@
+
+> bench
+> tsx src/bench.ts --only 17 --modes naive --runs 1
+
+1 tasks x 1 modes x 1 runs -> bench/results/run-2026-11-09T15-38-08-261Z.jsonl
+17-express-files-path        naive  #1 PASS tokens=14188 cost=0.00248 groq/openai/gpt-oss-120b
+done -> bench/results/run-2026-11-09T15-38-08-261Z.jsonl

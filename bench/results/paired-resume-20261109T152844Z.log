@@ -1,0 +1,15 @@
+
+> bench
+> tsx src/bench.ts --only 14,15,16,17 --modes naive,thrift --runs 1
+
+4 tasks x 2 modes x 1 runs -> bench/results/run-2026-11-09T15-28-44-567Z.jsonl
+14-fetch-queue-order         naive  #1 PASS tokens=7246 cost=0.00115 groq/openai/gpt-oss-120b
+14-fetch-queue-order         thrift #1 PASS tokens=5265 cost=0.00069 groq/openai/gpt-oss-20b
+15-zod-signup-errors         naive  #1 PASS tokens=10398 cost=0.00191 groq/openai/gpt-oss-120b
+15-zod-signup-errors         thrift #1 PASS tokens=9232 cost=0.00180 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+16-express-api-404           naive  #1 PASS tokens=5245 cost=0.00094 groq/openai/gpt-oss-120b
+16-express-api-404           thrift #1 PASS tokens=7394 cost=0.00180 groq/openai/gpt-oss-20b,groq/openai/gpt-oss-120b
+17-express-files-path        naive  #1 FAIL tokens=32839 cost=0.00505 groq/openai/gpt-oss-120b
+Naive hit a provider quota. Skipping the remaining naive runs in this batch.
+17-express-files-path        thrift #1 PASS tokens=20993 cost=0.00263 groq/openai/gpt-oss-20b
+done -> bench/results/run-2026-11-09T15-28-44-567Z.jsonl
