@@ -56,7 +56,7 @@ This table combines the November 7 batch and the November 9 fallback batch. Cell
 | Complex | 3 | Pending | 3 tasks, 2/3 pass, 8,818 tokens |
 | All | 17 | 4 tasks, 11/11 pass, 11,376 tokens | 17 tasks, 28/29 pass, 3,870 tokens |
 
-Groq returned HTTP 403 on November 9, so the baseline stopped after the first attempt. Thrift ran tasks 07-17 on fallback models. Gemini passed 10 of 11 tasks and Ollama failed task 13. The fallback batch averaged 6,960 tokens. Keep it separate from the Groq comparison above.
+Groq returned HTTP 403 on November 9, so the baseline stopped after the first attempt. Of tasks 07-17, ten passed on Gemini. Task 13 failed on Ollama after Gemini also errored. The fallback batch averaged 6,960 tokens.
 
 ```bash
 cd agent
@@ -134,6 +134,8 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 </p>
 
 The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
+
+The [pitch deck](docs/pitch/index.html) opens in a browser. The [demo script](docs/demo/script.md) covers the recording order and narration.
 
 ## Architecture
 

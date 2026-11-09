@@ -2,21 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import { BenchFile, BenchRow, Mode, fmtCost, fmtInt, fmtMs, fmtPct, getJSON, shortModel } from "./lib";
 import { Empty } from "./Live";
 
-type Agg = { runs: number; pass: number; passRate: number; tokens: number; cost: number | null; ms: number };
+type Agg = { runs: number; pass: number; passRate: number; tokens: number | null; cost: number | null; ms: number | null };
 const MODES: Mode[] = ["naive", "thrift", "stale"];
+
+function avgKnown(values: (number | null | undefined)[]): number | null {
+  const known = values.filter((value): value is number => typeof value === "number");
+  return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
+}
 
 function agg(rows: BenchRow[]): Agg | null {
   if (!rows.length) return null;
-  const costs = rows.map((r) => r.cost).filter((c): c is number => typeof c === "number");
   const pass = rows.filter((r) => r.pass).length;
-  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
   return {
     runs: rows.length,
     pass,
     passRate: pass / rows.length,
-    tokens: avg(rows.map((r) => r.tokens)),
-    cost: costs.length ? avg(costs) : null,
-    ms: avg(rows.map((r) => r.ms)),
+    tokens: avgKnown(rows.map((r) => r.tokens)),
+    cost: avgKnown(rows.map((r) => r.cost)),
+    ms: avgKnown(rows.map((r) => r.ms)),
   };
 }
 
@@ -198,10 +201,7 @@ function TokenChart({ rows }: { rows: BenchRow[] }) {
   const modes = MODES.filter((m) => rows.some((r) => r.mode === m));
   const data = tasks.map((task) => ({
     task,
-    vals: modes.map((m) => {
-      const xs = rows.filter((r) => r.task === task && r.mode === m).map((r) => r.tokens);
-      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-    }),
+    vals: modes.map((m) => avgKnown(rows.filter((r) => r.task === task && r.mode === m).map((r) => r.tokens))),
   }));
   const max = Math.max(1, ...data.flatMap((d) => d.vals.map((v) => v ?? 0)));
   const [hover, setHover] = useState<string | null>(null);

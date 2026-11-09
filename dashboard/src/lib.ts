@@ -54,9 +54,9 @@ export type BenchRow = {
   mode: Mode;
   run: number;
   pass: boolean;
-  tokens: number;
-  steps: number;
-  ms: number;
+  tokens: number | null;
+  steps: number | null;
+  ms: number | null;
   cost?: number | null;
   models?: string[];
   fallbacks?: number;
