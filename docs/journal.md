@@ -251,3 +251,9 @@ The Git follow-up path now keeps going after green tests when the task requests 
 After the Express judge errors, the freshness checker began requiring a URL and a verbatim excerpt present in the retrieved evidence before accepting a verdict. An isolated test kept a supported correction and downgraded an invented URL and fabricated quote to unknown. This change still needs a paired benchmark.
 
 The demo uses screen recordings of the dashboard, archival Bifrost fallback, budget and approval runs, and a newly recorded private pagination run. The private run used 974 tokens in one Ollama step and took the tests from 0/2 to 2/2. The capture includes the scoped benchmark and a Zod source example. The video and PNG frames are local submission files. Groq's models endpoint still returns HTTP 403.
+
+Restarting from the task shell exposed a launcher problem. Bifrost could disappear after its parent shell exited. The gateway launcher now starts a detached process and checks both MCP connection and gateway health before reporting success. Restarted without clearing the gateway databases. The updated stack passed the private pagination smoke test again in one Ollama step, with 973 tokens and both tests passing.
+
+The demo export is 148 seconds at 1920 by 1080 with English narration and captions. The seven original dashboard frames are available separately for the slide mockups. The README opens with the four-task benchmark and keeps the separate Tavily results in their own section.
+
+Live Zod and Express checks each returned unknown without a correction. The Express diagnostic showed that the judge received no source excerpts. A direct Tavily search returned HTTP 403. The agent now counts failed searches, reports them on the dashboard and skips the model judge when there is no evidence. A simulated 403 verified that only the claim extraction model call runs and all extracted claims stay unknown.

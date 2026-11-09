@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  Thrift fixes real bugs in real repos, the same as an agent that throws a big model at every step,
-  but picks the model per task, sends only the code that matters, checks its library knowledge
-  against the live web and asks before it touches anything risky. Built on Bifrost and Tavily.
+  Thrift is a terminal coding agent for Node.js repositories. It sends a compact context through
+  Bifrost, checks version-sensitive API claims with Tavily, and asks before writes and shell commands.
+  A local dashboard shows the model, tools and cost for each step.
 </p>
 
 <p align="center">
@@ -29,9 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo/bench.png" alt="Benchmark page: stale and thrift pass rates and token use" width="720" />
-  <br/><br/>
-  <img src="docs/demo/dashboard.png" alt="Thrift dashboard showing a live run step by step" width="720" />
+  <img src="docs/demo/benchmark-shared.png" alt="Benchmark dashboard comparing naive and thrift on four shared tasks" width="900" />
 </p>
 
 ## Results
@@ -126,7 +124,7 @@ The lower recorded thrift average on task 17 includes early failures on Ollama. 
 
 After this batch, the verifier began requiring a source URL and an excerpt present in the retrieved text. Claims without this evidence are marked unknown, and their corrections stay out of the coding prompt. The stricter verifier still needs a new benchmark.
 
-Raw data: [November 9 stale/thrift runs](bench/results/run-2026-11-09T12-37-18-207Z.jsonl).
+See the [freshness dashboard](docs/demo/bench.png) and the [November 9 stale/thrift runs](bench/results/run-2026-11-09T12-37-18-207Z.jsonl).
 
 ## Demo scenarios
 
