@@ -257,3 +257,11 @@ Restarting from the task shell exposed a launcher problem. Bifrost could disappe
 The demo export is 148 seconds at 1920 by 1080 with English narration and captions. The seven original dashboard frames are available separately for the slide mockups. The README opens with the four-task benchmark and keeps the separate Tavily results in their own section.
 
 Live Zod and Express checks each returned unknown without a correction. The Express diagnostic showed that the judge received no source excerpts. A direct Tavily search returned HTTP 403. The agent now counts failed searches, reports them on the dashboard and skips the model judge when there is no evidence. A simulated 403 verified that only the claim extraction model call runs and all extracted claims stay unknown.
+
+### Provider recovery and benchmark reruns
+
+After the tunnel was disabled, a direct Tavily search returned HTTP 200. Direct Groq model and inference probes still returned 403, but Bifrost served the first benchmark requests on Groq without fallback or cache hits. The two routes behaved differently, so the benchmark uses the working gateway route.
+
+The freshness rerun uses three attempts per mode on tasks 15-17 and writes `run-2026-11-09T14-53-34-479Z.jsonl`. The paired run on tasks 05-17 waits for it to finish to avoid competing for the Groq quota. Both runs keep the default pauses and use separate output files.
+
+The dashboard can show the paired suite from a manifest of raw run files. This keeps the source rows in their original batches. The runner now starts the agent directly with Node so its timeout targets the agent process rather than an npm wrapper.

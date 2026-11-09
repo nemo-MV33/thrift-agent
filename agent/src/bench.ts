@@ -47,12 +47,12 @@ async function resetWorkspace(repo: string) {
 }
 
 function runAgent(prompt: string, mode: string, cacheKey: string): Promise<AgentOut | null> {
-  const args = ["tsx", path.join(here, "index.ts"), prompt, "--yes", "--json"];
+  const args = ["--import", "tsx", path.join(here, "index.ts"), prompt, "--yes", "--json"];
   if (mode === "naive") args.push("--naive");
   // "stale" is thrift with the freshness check off, to measure what Tavily adds.
   if (mode === "stale") args.push("--no-fresh");
   return new Promise((resolve) => {
-    const child = spawn("npx", args, {
+    const child = spawn(process.execPath, args, {
       cwd: path.join(here, ".."),
       env: { ...process.env, THRIFT_CACHE_KEY: cacheKey },
     });

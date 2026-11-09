@@ -68,6 +68,7 @@ export type BenchRow = {
 
 export type BenchFile = {
   name: string;
+  label?: string;
   rows: number;
   mtime: number;
   hasSummary: boolean;

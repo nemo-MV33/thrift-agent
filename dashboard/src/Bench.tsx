@@ -24,7 +24,8 @@ function agg(rows: BenchRow[]): Agg | null {
 }
 
 function pickDefault(files: BenchFile[]) {
-  return [...files].sort((a, b) => b.rows - a.rows || Number(b.hasFreshness) - Number(a.hasFreshness) || b.mtime - a.mtime)[0];
+  return files.find((file) => file.name === "paired-suite")
+    ?? [...files].sort((a, b) => b.rows - a.rows || Number(b.hasFreshness) - Number(a.hasFreshness) || b.mtime - a.mtime)[0];
 }
 
 export function BenchPage() {
@@ -70,7 +71,7 @@ export function BenchPage() {
           <select value={file ?? ""} onChange={(e) => setFile(e.target.value)} disabled={!files}>
             {files?.map((f) => (
               <option key={f.name} value={f.name}>
-                {f.name.replace(/^run-|\.jsonl$/g, "").replace(/T(\d\d)-(\d\d)-(\d\d)-\d+Z/, " $1:$2:$3")} ({f.rows} rows)
+                {f.label ?? f.name.replace(/^run-|\.jsonl$/g, "").replace(/T(\d\d)-(\d\d)-(\d\d)-\d+Z/, " $1:$2:$3")} ({f.rows} rows)
               </option>
             ))}
           </select>

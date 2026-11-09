@@ -227,14 +227,28 @@ function summary(run: Run) {
 
 // ---------- Bench ----------
 
+const rawBenchFile = /^run-[\w.-]+\.jsonl$/;
+
+function pairedBench() {
+  try {
+    const manifest: unknown = JSON.parse(fs.readFileSync(path.join(benchDir, "paired-suite.json"), "utf8"));
+    if (!Array.isArray(manifest) || !manifest.length || !manifest.every((name) => typeof name === "string" && rawBenchFile.test(name))) return null;
+    const batches = [...new Set<string>(manifest)].map(readBench);
+    if (batches.some((batch) => !batch)) return null;
+    return { name: "paired-suite", rows: batches.flatMap((batch) => batch?.rows ?? []), summary: null };
+  } catch {
+    return null;
+  }
+}
+
 function listBench() {
   let names: string[] = [];
   try {
-    names = fs.readdirSync(benchDir).filter((f) => /^run-.*\.jsonl$/.test(f));
+    names = fs.readdirSync(benchDir).filter((f) => rawBenchFile.test(f));
   } catch {
     return [];
   }
-  return names
+  const files = names
     .map((name) => {
       const full = path.join(benchDir, name);
       const text = fs.readFileSync(full, "utf8");
@@ -250,10 +264,17 @@ function listBench() {
       };
     })
     .sort((a, b) => b.mtime - a.mtime);
+  const paired = pairedBench();
+  if (!paired) return files;
+  return [{
+    name: paired.name, label: "Paired benchmark", rows: paired.rows.length,
+    mtime: 0, hasSummary: false, hasFreshness: false, hasCost: paired.rows.some((row) => row.cost != null),
+  }, ...files];
 }
 
-function readBench(name: string) {
-  if (!/^run-[\w.-]+\.jsonl$/.test(name)) return null;
+function readBench(name: string): { name: string; rows: any[]; summary: unknown } | null {
+  if (name === "paired-suite") return pairedBench();
+  if (!rawBenchFile.test(name)) return null;
   const full = path.join(benchDir, name);
   if (!fs.existsSync(full)) return null;
   const rows = fs
@@ -346,7 +367,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === "/api/runs") {
-    const list = [...runs.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50).map(summary);
+    const list = [...runs.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100).map(summary);
     return send(res, 200, list);
   }
 
