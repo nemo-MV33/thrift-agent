@@ -1,0 +1,7 @@
+
+> bench
+> tsx src/bench.ts --only 07,08,09,10,11,12,13,14,15,16,17 --modes naive,thrift --runs 1
+
+11 tasks x 2 modes x 1 runs -> bench/results/run-2026-11-09T12-27-03-719Z.jsonl
+07-csv-quoted-fields         naive  #1 FAIL tokens=0 cost=0.00000 
+07-csv-quoted-fields         thrift #1 PASS tokens=2624 cost=0.01649 gemini/gemini-3.5-flash

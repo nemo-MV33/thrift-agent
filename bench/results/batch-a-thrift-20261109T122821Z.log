@@ -1,0 +1,16 @@
+
+> bench
+> tsx src/bench.ts --only 08,09,10,11,12,13,14,15,16,17 --modes thrift --runs 1
+
+10 tasks x 1 modes x 1 runs -> bench/results/run-2026-11-09T12-28-21-480Z.jsonl
+08-date-range-merge          thrift #1 PASS tokens=3446 cost=0.02210 gemini/gemini-3.5-flash
+09-inventory-reserve         thrift #1 PASS tokens=4614 cost=0.01565 gemini/gemini-3.5-flash
+10-duration-format           thrift #1 PASS tokens=3291 cost=0.00334 gemini/gemini-3.5-flash-lite
+11-emitter-once              thrift #1 PASS tokens=1389 cost=0.00112 gemini/gemini-3.5-flash-lite
+12-rename-user-name          thrift #1 PASS tokens=16455 cost=0.04193 gemini/gemini-3.5-flash
+13-catalog-cache             thrift #1 FAIL tokens=4276 cost=undefined ollama/qwen2.5-coder:7b
+14-fetch-queue-order         thrift #1 PASS tokens=5722 cost=0.00237 gemini/gemini-3.5-flash-lite
+15-zod-signup-errors         thrift #1 PASS tokens=3120 cost=0.01252 gemini/gemini-3.5-flash-lite,gemini/gemini-3.5-flash
+16-express-api-404           thrift #1 PASS tokens=9600 cost=0.03291 gemini/gemini-3.5-flash-lite,gemini/gemini-3.5-flash
+17-express-files-path        thrift #1 PASS tokens=22025 cost=0.00873 gemini/gemini-3.5-flash-lite
+done -> bench/results/run-2026-11-09T12-28-21-480Z.jsonl

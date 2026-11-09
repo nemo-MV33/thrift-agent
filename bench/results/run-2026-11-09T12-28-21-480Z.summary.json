@@ -1,0 +1,44 @@
+{
+  "overall": {
+    "thrift": {
+      "runs": 10,
+      "passRate": 0.9,
+      "tokens": 7393.8,
+      "cost": 0.015631922222222223,
+      "costMissing": 1,
+      "seconds": 42.83030000000001
+    }
+  },
+  "byTier": {
+    "medium": {
+      "thrift": {
+        "runs": 5,
+        "passRate": 1,
+        "tokens": 6953,
+        "cost": 0.010190379999999999,
+        "costMissing": 0,
+        "seconds": 19.356
+      }
+    },
+    "complex": {
+      "thrift": {
+        "runs": 3,
+        "passRate": 0.6666666666666666,
+        "tokens": 8817.666666666666,
+        "cost": 0.02215235,
+        "costMissing": 1,
+        "seconds": 79.35033333333334
+      }
+    },
+    "simple": {
+      "thrift": {
+        "runs": 2,
+        "passRate": 1,
+        "tokens": 6360,
+        "cost": 0.022715350000000002,
+        "costMissing": 0,
+        "seconds": 46.736000000000004
+      }
+    }
+  }
+}

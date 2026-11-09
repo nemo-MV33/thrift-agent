@@ -45,9 +45,25 @@ The Groq comparison has valid results for four shared tasks (01-04, all simple).
 
 Thrift used 86% fewer tokens per run on the shared tasks. The cost average excludes one thrift run with missing gateway cost. These figures come from the November 7 batch.
 
+### Coverage by difficulty
+
+This table combines the November 7 batch and the November 9 fallback batch. Cells report tasks covered, passing runs over valid runs, and average tokens per run.
+
+| Tier | Tasks | Naive | Thrift |
+|---|---:|---|---|
+| Simple | 7 | 4 tasks, 11/11 pass, 11,376 tokens | 7 tasks, 17/17 pass, 2,447 tokens |
+| Medium | 7 | Pending | 7 tasks, 9/9 pass, 4,910 tokens |
+| Complex | 3 | Pending | 3 tasks, 2/3 pass, 8,818 tokens |
+| All | 17 | 4 tasks, 11/11 pass, 11,376 tokens | 17 tasks, 28/29 pass, 3,870 tokens |
+
+Groq returned HTTP 403 on November 9, so the baseline stopped after the first attempt. Thrift ran tasks 07-17 on fallback models. Gemini passed 10 of 11 tasks and Ollama failed task 13. The fallback batch averaged 6,960 tokens. Keep it separate from the Groq comparison above.
+
 ```bash
 cd agent
-npm run summarize -- ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl
+npm run summarize -- \
+  ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl \
+  ../bench/results/run-2026-11-09T12-27-03-719Z.jsonl \
+  ../bench/results/run-2026-11-09T12-28-21-480Z.jsonl
 ```
 
 ## Why
@@ -82,7 +98,7 @@ Every model call and every tool call goes through the gateway.
 
 ## What Tavily does
 
-Models learn libraries from a snapshot of the web. Ask a model trained in 2024 to add a catch-all route to an Express 5 app and it writes `app.all('/api/*')`, which crashes at startup on Express 5.
+Library syntax can change between major versions. For example, `app.all('/api/*')` throws on Express 5 because the wildcard needs a name. [Express 5 migration guide](https://expressjs.com/en/guide/migrating-5/#path-route-matching-syntax)
 
 Before the first coding step, Thrift:
 

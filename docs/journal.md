@@ -211,3 +211,13 @@ In the fallback batch, task 12 passed in four Gemini Flash steps with 16,455 tok
 Task 15 passed on Gemini in one coding step with 3,120 total tokens, including 819 for two Tavily searches and the judge calls. The judge correctly flagged the obsolete Zod error accessor. Task 16 passed with 9,600 tokens, but its judge marked a claim containing the bare Express 5 wildcard as current. The [Express 5 migration guide](https://expressjs.com/en/guide/migrating-5/#path-route-matching-syntax) says that wildcard needs a name. A passing patch does not establish that the freshness verdict was right.
 
 The production dependency audit flagged the MCP SDK and its transitive Zod. Updating the agent lockfile in an isolated copy moved the SDK from 1.17.0 to 1.32.2 and cleared the production findings. The updated SDK passed stdio tool listing, read, write and command checks. The running benchmark still uses the dependencies it started with.
+
+### Batch A complete under fallback
+
+Task 17 passed in ten coding steps and 22,025 tokens on Gemini Flash-Lite. The freshness check took 467 tokens and made one search. It incorrectly marked the claim that an Express 5 named wildcard returns a string as current. It returns an array of segments in the fixture.
+
+Across the 11 fallback attempts on tasks 07-17, thrift passed 10/11, averaging 6,960 tokens, $0.01572 in model cost and 43.1 seconds. One cost is missing. Simple was 2/2 (6,360 tokens), medium 6/6 (6,232), and complex 2/3 (8,818). The two JSONL files are `run-2026-11-09T12-27-03-719Z.jsonl` and `run-2026-11-09T12-28-21-480Z.jsonl`.
+
+With the comparable November 7 source included for coverage, thrift has 28 passing runs out of 29 across all 17 tasks, averaging 3,870 tokens. Naive has valid runs on four tasks. The pooled thrift average mixes Groq-era and fallback runs. Compare against naive only on their shared tasks.
+
+Batch B started in `batch-b-20261109T123717Z.log` and writes `run-2026-11-09T12-37-18-207Z.jsonl`. The runner keeps the existing fallback chain and interleaves stale and thrift attempts on each task.
