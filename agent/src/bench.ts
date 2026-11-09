@@ -154,7 +154,8 @@ for (const task of tasks) {
         error: out?.error ?? null,
         ...(out?.freshnessFailed ? { freshnessFailed: true } : {}),
         freshness: out?.freshness
-          ? { searches: out.freshness.searches, tokens: out.freshness.tokens, verdicts: out.freshness.verdicts }
+          ? { searches: out.freshness.searches, failedSearches: out.freshness.failedSearches,
+              tokens: out.freshness.tokens, verdicts: out.freshness.verdicts }
           : null,
       };
       await fs.appendFile(outFile, JSON.stringify(row) + "\n");

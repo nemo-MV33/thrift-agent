@@ -15,7 +15,7 @@ export type Verdict = {
   correction: string;
   source: string | null;
 };
-export type FreshnessReport = { verdicts: Verdict[]; tokens: number; searches: number; ms: number; requestIds: string[] };
+export type FreshnessReport = { verdicts: Verdict[]; tokens: number; searches: number; failedSearches: number; ms: number; requestIds: string[] };
 
 type Chat = (messages: { role: string; content: string }[]) => Promise<{ content: string; tokens: number; requestId: string | null }>;
 type Judgement = Partial<Verdict> & { index?: number; quote?: string };
@@ -53,6 +53,9 @@ function parseList<T>(text: string): T[] {
 }
 
 const normalized = (s: string) => s.replace(/\s+/g, " ").trim();
+const unknownVerdict = (claim: Claim): Verdict => ({
+  library: claim.library, claim: claim.claim, status: "unknown", freshness: 0.5, correction: "", source: null,
+});
 
 async function tavily(query: string): Promise<{ url: string; content: string }[]> {
   const res = await fetch("https://api.tavily.com/search", {
@@ -93,17 +96,20 @@ export async function checkFreshness(root: string, task: string, chat: Chat): Pr
   const claims = parseList<Claim>(ask.content)
     .filter((claim) => claim && [claim.library, claim.version, claim.claim, claim.query].every((value) => typeof value === "string" && value.trim()))
     .slice(0, 3);
-  if (!claims.length) return { verdicts: [], tokens, searches: 0, ms: Date.now() - started, requestIds };
-
   const evidence = await Promise.all(
     claims.map(async (c) => {
       try {
-        return { claim: c, results: await tavily(c.query) };
+        return { claim: c, results: await tavily(c.query), failed: false };
       } catch {
-        return { claim: c, results: [] };
+        return { claim: c, results: [], failed: true };
       }
     }),
   );
+  const failedSearches = evidence.filter((entry) => entry.failed).length;
+  const report = (verdicts: Verdict[]): FreshnessReport => ({
+    verdicts, tokens, searches: evidence.length, failedSearches, ms: Date.now() - started, requestIds,
+  });
+  if (!evidence.some((entry) => entry.results.length)) return report(claims.map(unknownVerdict));
 
   const judge = await chat([
     {
@@ -131,17 +137,17 @@ export async function checkFreshness(root: string, task: string, chat: Chat): Pr
     const source = quote && results.find((result) =>
       result.url === answer?.source && normalized(result.content).includes(quote),
     );
-    const status = source && (answer?.status === "current" || answer?.status === "outdated") ? answer.status : "unknown";
+    if (!source || (answer?.status !== "current" && answer?.status !== "outdated")) return unknownVerdict(claim);
     return {
       library: claim.library,
       claim: claim.claim,
-      status,
-      freshness: status === "current" ? 1 : status === "outdated" ? 0 : 0.5,
-      correction: status === "outdated" && typeof answer?.correction === "string" ? answer.correction : "",
-      source: status !== "unknown" && source ? source.url : null,
+      status: answer.status,
+      freshness: answer.status === "current" ? 1 : 0,
+      correction: answer.status === "outdated" && typeof answer.correction === "string" ? answer.correction : "",
+      source: source.url,
     };
   });
-  return { verdicts, tokens, searches: evidence.length, ms: Date.now() - started, requestIds };
+  return report(verdicts);
 }
 
 /** Notes for the coding model. Only sourced corrections enter the prompt. */

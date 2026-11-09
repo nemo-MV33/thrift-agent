@@ -43,7 +43,7 @@ type RunView = {
   startedAt: number | null;
   end: Ev | null;
   items: Item[];
-  freshness: { verdicts: Verdict[]; searches: number; tokens: number; ms: number } | null;
+  freshness: { verdicts: Verdict[]; searches: number; failedSearches: number; tokens: number; ms: number } | null;
   tokens: number;
   cost: number;
   costKnown: boolean;
@@ -88,6 +88,7 @@ function buildRun(events: Ev[]): RunView {
         view.freshness = {
           verdicts: (e.verdicts as Verdict[]) ?? [],
           searches: Number(e.searches ?? 0),
+          failedSearches: Number(e.failedSearches ?? 0),
           tokens: Number(e.tokens ?? 0),
           ms: Number(e.ms ?? 0),
         };
@@ -390,7 +391,7 @@ function FreshnessCard({ f }: { f: NonNullable<RunView["freshness"]> }) {
       <header className="panel-head">
         <h2>Freshness check</h2>
         <span className="muted mono">
-          {f.searches} searches, {fmtInt(f.tokens)} tokens, {fmtMs(f.ms)}
+          {f.searches} searches{f.failedSearches > 0 && ` (${f.failedSearches} failed)`}, {fmtInt(f.tokens)} tokens, {fmtMs(f.ms)}
         </span>
       </header>
       {f.verdicts.length === 0 ? (

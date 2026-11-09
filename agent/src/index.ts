@@ -207,7 +207,11 @@ if (fresh) {
     return null;
   });
   if (freshness) {
-    emit("freshness", { verdicts: freshness.verdicts, searches: freshness.searches, tokens: freshness.tokens, ms: freshness.ms });
+    emit("freshness", {
+      verdicts: freshness.verdicts, searches: freshness.searches, failedSearches: freshness.failedSearches,
+      tokens: freshness.tokens, ms: freshness.ms,
+    });
+    if (freshness.failedSearches) console.log(gray(`[fresh] ${freshness.failedSearches} of ${freshness.searches} web searches failed`));
     for (const v of freshness.verdicts)
       console.log(gray(`[fresh] ${v.library}: ${v.status} (${v.freshness}) ${v.claim}`));
   }
