@@ -175,3 +175,9 @@ Run without `--yes`, in a copy of task 01 with a local bare repo as `origin`. Th
 Terminal output for both is in `approval-deny.txt` and `approval-approve.txt`, the dashboard view of the denied run in `approval.png`.
 
 Two things we noticed. When the task is a code fix, the agent ends as soon as the tests pass after a write, so a "fix it, then commit and push" task never reaches the push. And in thrift mode the system prompt pushes the model to write a fix even when the task says the fix is already there; it only stopped doing that when told not to edit any files.
+
+## 2026-11-09
+
+### Benchmark task selection
+
+The runner accepts comma-separated prefixes in `--only`. A zero-run check selected exactly three tasks for `07, 08,09` and one for `03`. This lets us resume a batch without rerunning tasks that already have results.

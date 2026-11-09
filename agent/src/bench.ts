@@ -3,7 +3,7 @@
 // the agent can't pass by editing them, and records pass/fail, tokens,
 // cost (as Bifrost computed it) and time.
 //
-//   npm run bench -- [--runs 3] [--only 03] [--modes naive,thrift]
+//   npm run bench -- [--runs 3] [--only 07,08,09] [--modes naive,thrift]
 import { execFile, spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -24,7 +24,7 @@ const opt = (name: string, def: string) => {
   return i === -1 ? def : argv[i + 1];
 };
 const runs = Number(opt("runs", "3"));
-const only = opt("only", "");
+const only = opt("only", "").split(",").map((prefix) => prefix.trim()).filter(Boolean);
 const modes = opt("modes", "naive,thrift").split(",");
 // Groq's free tier allows 8k tokens a minute on the big model, so runs are
 // spaced out. Otherwise the baseline would keep failing over to Gemini.
@@ -104,7 +104,9 @@ async function costOf(ids: string[]): Promise<number | null> {
   return null;
 }
 
-const tasks = (await fs.readdir(tasksDir)).filter((t) => !only || t.startsWith(only)).sort();
+const tasks = (await fs.readdir(tasksDir))
+  .filter((task) => !only.length || only.some((prefix) => task.startsWith(prefix)))
+  .sort();
 await fs.mkdir(resultsDir, { recursive: true });
 const outFile = path.join(resultsDir, `run-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
 console.log(`${tasks.length} tasks x ${modes.length} modes x ${runs} runs -> ${path.relative(projectRoot, outFile)}`);
