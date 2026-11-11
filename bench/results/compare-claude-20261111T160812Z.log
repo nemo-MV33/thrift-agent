@@ -1,0 +1,19 @@
+17 tasks x claude-code x 1 runs -> bench/results/run-2026-11-11T16-08-13-430Z.jsonl
+01-cart-coupon               claude-code #1 PASS tokens=159751 (new 8, cache read 139730, cache write 19038, out 975) claude-opus-5-5
+02-paginate-offset           claude-code #1 PASS tokens=158036 (new 8, cache read 139078, cache write 18302, out 648) claude-opus-5-5
+03-config-log-level          claude-code #1 PASS tokens=118544 (new 6, cache read 99749, cache write 18240, out 549) claude-opus-5-5
+04-slugify-dashes            claude-code #1 PASS tokens=157723 (new 8, cache read 138947, cache write 18126, out 642) claude-opus-5-5
+05-rate-limit-window         claude-code #1 PASS tokens=158494 (new 8, cache read 139258, cache write 18418, out 810) claude-opus-5-5
+06-invoice-net-days          claude-code #1 PASS tokens=159236 (new 8, cache read 139528, cache write 18768, out 932) claude-opus-5-5
+07-csv-quoted-fields         claude-code #1 PASS tokens=160333 (new 8, cache read 139888, cache write 19144, out 1293) claude-opus-5-5
+08-date-range-merge          claude-code #1 PASS tokens=120053 (new 6, cache read 100358, cache write 18745, out 944) claude-opus-5-5
+09-inventory-reserve         claude-code #1 PASS tokens=160286 (new 8, cache read 139953, cache write 19191, out 1134) claude-opus-5-5
+10-duration-format           claude-code #1 PASS tokens=161173 (new 8, cache read 139236, cache write 19705, out 2224) claude-opus-5-5
+11-emitter-once              claude-code #1 PASS tokens=159742 (new 8, cache read 139420, cache write 18960, out 1354) claude-opus-5-5
+12-rename-user-name          claude-code #1 PASS tokens=163096 (new 8, cache read 141780, cache write 19925, out 1383) claude-opus-5-5
+13-catalog-cache             claude-code #1 PASS tokens=121106 (new 6, cache read 100585, cache write 19192, out 1323) claude-opus-5-5
+14-fetch-queue-order         claude-code #1 PASS tokens=161541 (new 8, cache read 140554, cache write 19829, out 1150) claude-opus-5-5
+15-zod-signup-errors         claude-code #1 PASS tokens=160053 (new 8, cache read 139807, cache write 19016, out 1222) claude-opus-5-5
+16-express-api-404           claude-code #1 PASS tokens=158626 (new 8, cache read 139214, cache write 18394, out 1010) claude-opus-5-5
+17-express-files-path        claude-code #1 PASS tokens=158971 (new 8, cache read 139636, cache write 18467, out 860) claude-opus-5-5
+done -> bench/results/run-2026-11-11T16-08-13-430Z.jsonl

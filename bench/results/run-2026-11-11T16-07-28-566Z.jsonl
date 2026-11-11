@@ -1,0 +1,2 @@
+{"task":"01-cart-coupon","tier":"simple","mode":"claude-code","run":1,"pass":true,"tokens":161721,"usage":{"input":8,"cached":160623,"output":1090},"steps":5,"ms":26585,"cost":0.20811580000000002,"models":["claude-opus-5-5"],"crashed":false,"error":null}
+{"task":"02-paginate-offset","tier":"simple","mode":"claude-code","run":1,"pass":true,"tokens":158220,"usage":{"input":8,"cached":157584,"output":628},"steps":4,"ms":13757,"cost":0.18760539999999998,"models":["claude-opus-5-5"],"crashed":false,"error":null}

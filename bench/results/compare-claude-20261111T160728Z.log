@@ -1,0 +1,3 @@
+17 tasks x claude-code x 1 runs -> bench/results/run-2026-11-11T16-07-28-566Z.jsonl
+01-cart-coupon               claude-code #1 PASS tokens=161721 (new 8, cached 160623, out 1090) claude-opus-5-5
+02-paginate-offset           claude-code #1 PASS tokens=158220 (new 8, cached 157584, out 628) claude-opus-5-5
