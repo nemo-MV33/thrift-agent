@@ -6,7 +6,7 @@ import type { Message } from "./context.js";
 export const GATEWAY = process.env.BIFROST_URL ?? "http://localhost:8080";
 
 export class GatewayError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly retryAfter: number | null = null) {
     super(`gateway ${status}: ${message}`);
   }
 }
@@ -17,8 +17,18 @@ export async function gatewayChat(headers: Record<string, string>, payload: Reco
     headers: { ...headers, ...extra },
     body: JSON.stringify(payload),
   });
-  const body: any = await res.json();
-  if (!res.ok) throw new GatewayError(res.status, body?.error?.message ?? JSON.stringify(body));
+  // A proxy in front of the gateway can answer with HTML, so don't assume JSON.
+  const text = await res.text();
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = { error: { message: text.slice(0, 200) } };
+  }
+  if (!res.ok) {
+    const hint = Number(res.headers.get("retry-after"));
+    throw new GatewayError(res.status, body?.error?.message ?? JSON.stringify(body), Number.isFinite(hint) && hint > 0 ? hint : null);
+  }
   const usage = body.usage ?? {};
   const provider = res.headers.get("x-bifrost-routing-info-provider") ?? res.headers.get("x-bifrost-provider");
   const servedModel = res.headers.get("x-bifrost-routing-info-model");

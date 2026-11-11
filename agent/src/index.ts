@@ -3,42 +3,44 @@
 // leaves running them to us, so this is where risky calls get confirmed.
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFreshness, freshnessNotes } from "./freshness.js";
 import { buildContext, compactHistory, dropFile, type Message, type ToolCall } from "./context.js";
 import { GATEWAY, GatewayError, gatewayChat } from "./gateway.js";
+import { markedPrivate, needsApproval, retryDelay } from "./policy.js";
+import { clearSession, loadSession, saveSession, type Session } from "./session.js";
 
 const args = process.argv.slice(2);
 const autoYes = args.includes("--yes");
-// --naive is the baseline for the benchmark: one strong model, no repo
-// context up front, full history every step.
-const naive = args.includes("--naive");
 const asJson = args.includes("--json");
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workspace = path.resolve(root, process.env.THRIFT_WORKSPACE ?? "sandbox/demo-app");
-const task = args.filter((a) => !a.startsWith("--")).join(" ");
+const sessionFile = process.env.THRIFT_SESSION_FILE ?? path.join(root, ".thrift", "session.json");
+
+// --resume continues the last run that stopped on an error, with its history,
+// model and step count. The mode comes from the saved run, not the new flags.
+let resumed: Session | null = null;
+if (args.includes("--resume")) {
+  resumed = await loadSession(sessionFile);
+  if (!resumed || resumed.workspace !== workspace) {
+    console.error("No stopped run to resume for this workspace.");
+    process.exit(1);
+  }
+}
+// --naive is the baseline for the benchmark: one strong model, no repo
+// context up front, full history every step.
+const naive = resumed ? resumed.mode === "naive" : args.includes("--naive");
+const task = resumed?.task ?? args.filter((a) => !a.startsWith("--")).join(" ");
 const gitFollowUp = /\bgit\s+(?:add|commit|push)\b|\bthen\s+(?:commit|push)\b/i.test(task);
 
 if (!task) {
-  console.error('usage: npm start -- "<task>" [--private] [--yes]');
+  console.error('usage: npm start -- "<task>" [--private] [--yes]   or   npm start -- --resume');
   process.exit(1);
 }
 
-// A repo is confidential if it says so itself, with a .thrift-private file or
-// "thrift": { "private": true } in package.json. The marker lives in the repo,
-// not in the task text, so nothing typed into a prompt can turn it off.
-async function markedPrivate(dir: string): Promise<boolean> {
-  if (await fs.access(path.join(dir, ".thrift-private")).then(() => true, () => false)) return true;
-  try {
-    return JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"))?.thrift?.private === true;
-  } catch {
-    return false;
-  }
-}
 const marked = await markedPrivate(workspace);
-const isPrivate = marked || args.includes("--private");
+const isPrivate = marked || args.includes("--private") || resumed?.mode === "private";
 if (marked && naive) {
   console.error("This repository is marked confidential. The baseline agent uses a cloud model, so it will not run here.");
   process.exit(1);
@@ -49,7 +51,7 @@ if (isPrivate && !process.env.THRIFT_VK_PRIVATE) {
 }
 if (marked) console.log("This repository is marked confidential. Every model call stays on local Ollama.");
 // Private repos never leave the machine, so no web lookups there either.
-const fresh = !naive && !isPrivate && !args.includes("--no-fresh");
+const fresh = !naive && !isPrivate && !resumed && !args.includes("--no-fresh");
 
 const vk = isPrivate
   ? process.env.THRIFT_VK_PRIVATE
@@ -58,11 +60,11 @@ const vk = isPrivate
     : process.env.THRIFT_VK_DEV;
 let model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
 let fallbacks = isPrivate || naive ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
-
-// Reading is free. Every other tool, including any a future MCP server adds,
-// needs a yes from the user. The check runs here in the CLI, after the model
-// has answered, so no prompt can talk its way around it.
-const READ_ONLY = new Set(["list_files", "read_file"]);
+// A private run that resumes stays local even if the saved run was not private.
+if (resumed && (!isPrivate || resumed.mode === "private")) {
+  model = resumed.model;
+  fallbacks = resumed.fallbacks;
+}
 
 const headers: Record<string, string> = { "Content-Type": "application/json", "x-bf-vk": vk ?? "" };
 // The benchmark gives each run its own cache namespace so repeated runs
@@ -83,6 +85,29 @@ function emit(type: string, data: Record<string, unknown> = {}) {
 }
 
 const rl = createInterface({ input: stdin, output: stdout });
+// Answers are read line by line from a queue rather than with rl.question,
+// which throws once stdin has closed. A closed stdin counts as "no".
+const answers: string[] = [];
+let waiting: ((line: string | null) => void) | null = null;
+let inputClosed = false;
+rl.on("line", (line) => {
+  if (waiting) {
+    const resolve = waiting;
+    waiting = null;
+    resolve(line);
+  } else answers.push(line);
+});
+rl.on("close", () => {
+  inputClosed = true;
+  waiting?.(null);
+  waiting = null;
+});
+function ask(prompt: string): Promise<string | null> {
+  stdout.write(prompt);
+  if (answers.length) return Promise.resolve(answers.shift()!);
+  if (inputClosed) return Promise.resolve(null);
+  return new Promise((resolve) => (waiting = resolve));
+}
 const gray = (s: string) => `\x1b[90m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
@@ -93,12 +118,28 @@ const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 // how hard the task is. So the first request is routed on the task itself,
 // and later steps stay on whatever model it picked. The pinned header turns
 // the tier rules off for those requests (see bifrost/config.json).
-let pinned = false;
+let pinned = resumed ? resumed.pinned && (!isPrivate || resumed.mode === "private") : false;
 
-function chat(messages: Message[]) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function chat(messages: Message[], step: number) {
   // A cap on output: a small local model that runs past its context window
   // can otherwise generate until the gateway times out (seen: 504 after 300 s).
-  return gatewayChat(headers, { model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }, pinned ? { "x-thrift-pinned": "1" } : {});
+  const payload = () => ({ model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await gatewayChat(headers, payload(), pinned ? { "x-thrift-pinned": "1" } : {});
+    } catch (e) {
+      // Bifrost already tried every model in the fallback chain. If all of them
+      // are rate limited or down, wait and ask again instead of dropping the run.
+      const wait = retryDelay(e, attempt);
+      if (wait == null) throw e;
+      const reason = e instanceof GatewayError ? `HTTP ${e.status}` : "gateway unreachable";
+      console.log(yellow(`No model answered (${reason}). Waiting ${Math.round(wait / 1000)} s, then trying again.`));
+      emit("retry", { step, attempt: attempt + 1, waitMs: wait, reason });
+      await sleep(wait);
+    }
+  }
 }
 
 async function execTool(call: ToolCall): Promise<Message> {
@@ -163,8 +204,9 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
     return true;
   }
   emit("approval_wait", { tool: toolName, ...detail });
-  const answer = await rl.question("apply? [y/N] ");
-  const approved = answer.trim().toLowerCase().startsWith("y");
+  const answer = await ask("apply? [y/N] ");
+  if (answer === null) console.log("\nno answer, treating it as no");
+  const approved = answer?.trim().toLowerCase().startsWith("y") ?? false;
   emit("approval", { tool: toolName, ...detail, approved, auto: false });
   return approved;
 }
@@ -178,8 +220,8 @@ const SYSTEM = naive
     : "Coding agent. The relevant files are already below, don't read them again. " +
       "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
 
-emit("run_start", { task, workspace: path.basename(workspace) });
-let tokens = 0;
+emit("run_start", { task, workspace: path.basename(workspace), resumed: Boolean(resumed) });
+let tokens = resumed?.tokens ?? 0;
 const usage: { model: string; prompt: number; completion: number; fallback: boolean; cacheHit: boolean; requestId: string | null }[] = [];
 const started = Date.now();
 let freshness: Awaited<ReturnType<typeof checkFreshness>> = null;
@@ -214,7 +256,8 @@ if (fresh) {
 }
 const notes = freshness ? freshnessNotes(freshness) : null;
 
-const messages: Message[] = [
+if (resumed) console.log(gray(`Resuming "${task}" from step ${resumed.steps + 1} on ${model}. It stopped on: ${resumed.reason}`));
+const messages: Message[] = resumed ? resumed.messages : [
   { role: "system", content: SYSTEM },
   // Repo context and the task go in separate messages. Bifrost classifies
   // complexity from the latest user message only, so it sees just the task.
@@ -263,16 +306,17 @@ function toolCallsFromText(content: string | null, step: number): ToolCall[] {
 
 const isTestRun = (cmd: unknown) => typeof cmd === "string" && /^\s*npm\s+(t|test|run\s+test)(\s|$)/.test(cmd);
 
-let steps = 0;
+let steps = resumed?.steps ?? 0;
 let stopped = false;
-let wrote = false;
+let wrote = resumed?.wrote ?? false;
 let finished = false;
 let error: string | null = null;
-for (let step = 1; step <= 15 && !stopped; step++) {
+const firstStep = steps + 1;
+for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   let r: Awaited<ReturnType<typeof chat>>;
   const stepStart = Date.now();
   try {
-    r = await chat(naive ? messages : compactHistory(messages));
+    r = await chat(naive ? messages : compactHistory(messages), step);
   } catch (e: any) {
     console.log(red(e.message));
     // Bifrost checks the virtual key's budget before it forwards a request,
@@ -281,6 +325,13 @@ for (let step = 1; step <= 15 && !stopped; step++) {
       console.log(red("Spending limit for this virtual key is reached. Stopping before any further model call. Files written so far stay as they are."));
     error = e.message;
     emit("error", { step, message: e.message });
+    // Keep everything up to the last finished step, so the run can go on once
+    // the provider is back or the budget is raised.
+    await saveSession(sessionFile, {
+      version: 1, task, workspace, mode, model, fallbacks, pinned, messages, steps, tokens, wrote,
+      savedAt: new Date().toISOString(), reason: e.message.slice(0, 200),
+    });
+    console.log(yellow("The run is saved. Fix the cause, then continue it with: npm start -- --resume"));
     break;
   }
   if (!pinned && !naive && !isPrivate) {
@@ -326,7 +377,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     emit("tool", { step, tool: toolName, args: call.function.arguments.slice(0, 300) });
     // A "no" ends the run. Otherwise models tend to retry the same change
     // through another tool, which defeats the point of asking.
-    if (!READ_ONLY.has(toolName) && !(await confirm(call, toolName))) {
+    if (needsApproval(toolName) && !(await confirm(call, toolName))) {
       console.log("rejected, stopping");
       stopped = true;
       break;
@@ -380,6 +431,8 @@ for (let step = 1; step <= 15 && !stopped; step++) {
   }
 }
 
+// Only a run that stopped on an error is worth resuming.
+if (!error) await clearSession(sessionFile);
 console.log(gray(`\ntotal tokens: ${tokens}, steps: ${steps}`));
 emit("run_end", { tokens, steps, finished, stopped, error, ms: Date.now() - started });
 if (asJson) console.log(JSON.stringify({ tokens, steps, stopped, error, ms: Date.now() - started, usage, freshness, freshnessFailed }));

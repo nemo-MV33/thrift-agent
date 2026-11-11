@@ -7,3 +7,4 @@ bifrost/*
 !bifrost/config.template.json
 sandbox/
 hackathon/
+.thrift/
