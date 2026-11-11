@@ -35,7 +35,7 @@
 
 ## Results
 
-On the 17 benchmark tasks, Thrift passed **17/17** with an average of **3,150 tokens per task**. The naive baseline needed 10,878, so Thrift used **71% fewer tokens**. It was cheaper on 15 of the 17 tasks.
+On the 17 benchmark tasks, Thrift passed **17/17** with an average of **3,150 tokens per task**. The naive baseline needed 10,878, so Thrift used **71% fewer tokens**, and fewer on 15 of the 17 tasks. Claude Code and Codex also solved all 17, with 152,751 and 91,290 tokens per task ([details](#against-codex-and-claude-code)).
 
 | Agent | Passed | Avg tokens per task | Avg model cost | Avg time |
 |---|---:|---:|---:|---:|
@@ -44,7 +44,7 @@ On the 17 benchmark tasks, Thrift passed **17/17** with an average of **3,150 to
 
 Each task is averaged first, then the 17 task means are averaged, so tasks with more repeats don't count extra. Averaged per run instead, as the dashboard does, it is 11,126 against 3,150, 72% fewer. Fourteen tasks finished in a single model call. The two tasks where Thrift spent more than naive are 16 and 17, which run the Tavily check: the coding part alone came to 3,495 and 11,570 tokens, under naive on both, and the check's 3,379 and 4,858 tokens put it over. The cost gap is smaller than the token gap because Groq's daily quota for the small model ran out during the run and 16 calls fell back to Gemini, which costs more per token.
 
-The Thrift numbers come from one run per task on November 11, after the [`write_files` change](#how-it-saves-tokens). The naive runs are the recorded ones from November 7 and 9. The naive agent and its tools did not change between them. The first Thrift suite, before `write_files`, averaged 4,931 tokens per task (55% fewer than naive) with 31/31 passes. Its files are listed in [paired-suite.json](bench/results/paired-suite.json).
+The Thrift numbers come from one run per task on November 11, after the [`write_files` change](#how-it-saves-tokens). The naive runs are the recorded ones from November 7 and 9. The naive prompt, model and tools did not change between them. The first Thrift suite, before `write_files`, averaged 4,931 tokens per task (55% fewer than naive) with 31/31 passes. Its files are listed in [paired-suite.json](bench/results/paired-suite.json).
 
 ### By difficulty
 
@@ -211,7 +211,6 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 </p>
 
 The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
-
 
 ## Architecture
 
