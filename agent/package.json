@@ -5,7 +5,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "bench": "tsx src/bench.ts",
-    "summarize": "tsx src/summarize.ts"
+    "summarize": "tsx src/summarize.ts",
+    "check": "tsx src/check.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
