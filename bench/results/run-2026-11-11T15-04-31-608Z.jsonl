@@ -1,0 +1,2 @@
+{"task":"04-slugify-dashes","tier":"simple","mode":"claude-code","run":1,"pass":false,"tokens":0,"usage":{"input":0,"cached":0,"output":0},"steps":1,"ms":848,"cost":0,"models":[],"crashed":true,"error":"Not logged in · Please run /login"}
+{"task":"04-slugify-dashes","tier":"simple","mode":"codex","run":1,"pass":true,"tokens":92109,"usage":{"input":25857,"cached":65920,"output":332},"steps":1,"ms":25511,"cost":null,"models":[],"crashed":false,"error":null}
