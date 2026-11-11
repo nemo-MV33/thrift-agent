@@ -335,3 +335,17 @@ Also started comparing with agents people actually use. `npm run compare` copies
 Full run after the change, one attempt per task: 17/17 passed, 3,150 tokens per task on average against 10,878 for naive, 71% fewer. Fourteen tasks took a single model call. Thrift still spent more than naive on 16 and 17, both because of the Tavily check (3,379 and 4,858 tokens). The coding part alone was under naive on both. Groq's daily quota for gpt-oss-20b ran out partway, so 16 calls went to Gemini and the cost only fell 27%.
 
 Codex on all 17 tasks: 17/17, 91,290 tokens per task of which 77,327 were cached input, 13,963 uncached. Thrift used fewer uncached tokens on 16 of the 17. Claude Code could not run yet because its CLI is not logged in on this machine.
+
+Logged in Claude Code and ran it on all 17 tasks: 17/17, 152,751 tokens per task, 132,748 of them read from the prompt cache. The first attempt lumped cache writes in with cache reads; Anthropic bills writes above the normal input price, so the runner now keeps them apart and counts them as uncached. That run was stopped after task 01 and restarted. Uncached, Claude Code used 20,003 tokens per task and Codex 13,963, against 3,150 for Thrift.
+
+### Review, November 12
+
+A review pass over the last two weeks of changes found real bugs:
+
+- Parallel judges both stored their verdicts through the same temp file, so the second rename could fail and throw away a finished check. A regression test then showed a second race: each parallel call loaded the cache file on its own and the last writer dropped the others' entries. The cache now loads once and writes in order.
+- A tool call with arguments cut off at `max_tokens` crashed the CLI without saving the run. Broken arguments now go back to the model as a tool error.
+- The automatic test run fired after any write call, even one the server rejected.
+- Cached verdicts did not include the search and judge settings, so a new judge version would have reused old answers.
+- In `npm run compare`, an agent that stopped on its own error counted as a failed task. It is now marked as crashed.
+
+20 tests pass.

@@ -56,17 +56,19 @@ The Thrift numbers come from one run per task on November 11, after the [`write_
 
 The complex tasks gained the most from `write_files`. They touch several files, and with one write per reply each extra file cost a full round trip.
 
-### Against Codex
+### Against Codex and Claude Code
 
-We also put Codex CLI (the agent that ships with ChatGPT, model gpt-6.1-sol at low reasoning effort) on the same 17 tasks with `npm run compare`. Each attempt ran in a fresh copy of the fixture with approvals off, and `npm test` on the restored tests decided pass or fail.
+We also ran the two agents most people use on the same 17 tasks with `npm run compare`: Codex CLI (the agent in ChatGPT, gpt-6.1-sol at low reasoning effort) and Claude Code (Opus 5.5). Each attempt got a fresh copy of the fixture with approvals off, and `npm test` on the restored tests decided pass or fail. Token counts are what each agent reports about itself.
 
-| Agent | Passed | Avg tokens per task | Of which cached input | Uncached tokens |
+| Agent | Passed | Avg tokens per task | Read from prompt cache | Uncached tokens |
 |---|---:|---:|---:|---:|
+| Claude Code | 17/17 | 152,751 | 132,748 | 20,003 |
 | Codex | 17/17 | 91,290 | 77,327 | 13,963 |
 | Thrift | 17/17 | 3,150 | 0 | 3,150 |
 
-Both solved every task. Codex reads about 29 times as many tokens per task. Most of that is its own system prompt and tool definitions, which the provider caches and bills at a discount, so a fairer line is uncached tokens: there Codex still used 4.4 times as many, and more than Thrift on 16 of 17 tasks. The models differ (a frontier model against gpt-oss on Groq), so this compares the agents as you would use them, not the models. One run per task. [Raw runs](bench/results/run-2026-11-11T15-05-14-608Z.jsonl).
+All three solved every task. Most of what the other two read is their own system prompt and tool definitions, which the provider caches and bills at a discount. So the fairer line is uncached tokens (new input, cache writes and output): Claude Code used 6.4 times as many as Thrift and Codex 4.4 times as many. Thrift was lower than Claude Code on all 17 tasks and lower than Codex on 16. Asked only to reply "ok", Claude Code still wrote about 39,000 tokens of setup into the cache.
 
+The models differ, so this compares the agents as you would use them, not the models behind them. One run per task. Raw runs: [Claude Code](bench/results/run-2026-11-11T16-08-13-430Z.jsonl), [Codex](bench/results/run-2026-11-11T15-05-14-608Z.jsonl).
 
 Reproduce the comparison with the source files:
 
@@ -294,7 +296,7 @@ After moving the Thrift checkout, `scripts/gateway.sh --config-only` rewrites th
 npm test --prefix agent
 ```
 
-The unit tests cover the approval rule, retry delays, the private marker, saved sessions, history trimming and the quote check. The CLI tests start the real agent against a small mock gateway and check the fallback notice, the retry after a 503, save and resume, the 402 stop, private mode on a marked repo and a declined write. They need no API keys.
+The unit tests cover the approval rule, retry delays, the private marker, saved sessions, history trimming, the quote check and parallel cache writes. The CLI tests start the real agent against a small mock gateway and check the fallback notice, the retry after a 503, save and resume, the 402 stop, private mode on a marked repo, a declined write, `write_files` and broken tool arguments. They need no API keys.
 
 ### Environment
 
