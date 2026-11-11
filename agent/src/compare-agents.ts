@@ -30,7 +30,10 @@ const agents = opt("agents", "claude-code,codex").split(",");
 const only = opt("only", "").split(",").map((p) => p.trim()).filter(Boolean);
 const runs = Number(opt("runs", "1"));
 
-type Usage = { input: number; cached: number; output: number };
+// cached: input read from the provider's prompt cache, billed at a discount.
+// cacheWrite: input written to it, which Anthropic bills above the normal
+// input price, so it counts as new work, not as cache.
+type Usage = { input: number; cached: number; cacheWrite: number; output: number };
 type AgentResult = { usage: Usage; steps: number | null; model: string | null; cost: number | null; error: string | null };
 
 function exec(bin: string, args: string[], cwd: string, timeoutMs = 600_000): Promise<{ out: string; code: number | null }> {
@@ -52,7 +55,7 @@ async function claudeCode(prompt: string, cwd: string): Promise<AgentResult> {
   const bin = process.env.CLAUDE_BIN ?? "claude";
   const { out } = await exec(bin, ["-p", prompt, "--output-format", "json", "--dangerously-skip-permissions", "--strict-mcp-config"], cwd);
   const line = out.trim().split("\n").reverse().find((l) => l.startsWith("{"));
-  if (!line) return { usage: { input: 0, cached: 0, output: 0 }, steps: null, model: null, cost: null, error: out.slice(-300) };
+  if (!line) return { usage: { input: 0, cached: 0, cacheWrite: 0, output: 0 }, steps: null, model: null, cost: null, error: out.slice(-300) };
   const j = JSON.parse(line);
   // modelUsage covers every model the run used, subagents included.
   const per = Object.entries<any>(j.modelUsage ?? {});
@@ -60,14 +63,16 @@ async function claudeCode(prompt: string, cwd: string): Promise<AgentResult> {
     ? per.reduce(
         (u, [, m]) => ({
           input: u.input + (m.inputTokens ?? 0),
-          cached: u.cached + (m.cacheReadInputTokens ?? 0) + (m.cacheCreationInputTokens ?? 0),
+          cached: u.cached + (m.cacheReadInputTokens ?? 0),
+          cacheWrite: u.cacheWrite + (m.cacheCreationInputTokens ?? 0),
           output: u.output + (m.outputTokens ?? 0),
         }),
-        { input: 0, cached: 0, output: 0 },
+        { input: 0, cached: 0, cacheWrite: 0, output: 0 },
       )
     : {
         input: j.usage?.input_tokens ?? 0,
-        cached: (j.usage?.cache_read_input_tokens ?? 0) + (j.usage?.cache_creation_input_tokens ?? 0),
+        cached: j.usage?.cache_read_input_tokens ?? 0,
+        cacheWrite: j.usage?.cache_creation_input_tokens ?? 0,
         output: j.usage?.output_tokens ?? 0,
       };
   return {
@@ -84,7 +89,7 @@ async function claudeCode(prompt: string, cwd: string): Promise<AgentResult> {
 async function codex(prompt: string, cwd: string): Promise<AgentResult> {
   const bin = process.env.CODEX_BIN ?? "codex";
   const { out, code } = await exec(bin, ["exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", prompt], cwd);
-  const usage = { input: 0, cached: 0, output: 0 };
+  const usage = { input: 0, cached: 0, cacheWrite: 0, output: 0 };
   let turns = 0;
   let model: string | null = null;
   let error: string | null = null;
@@ -140,15 +145,18 @@ for (const task of tasks) {
       for (const f of meta.protected ?? []) await fs.cp(path.join(repo, f), path.join(dir, f));
       const pass = await passes(dir);
       await fs.rm(dir, { recursive: true, force: true });
-      const tokens = res.usage.input + res.usage.cached + res.usage.output;
+      const tokens = res.usage.input + res.usage.cached + res.usage.cacheWrite + res.usage.output;
       const row = {
         task, tier: meta.tier, mode: agent, run: r, pass, tokens, usage: res.usage, steps: res.steps, ms,
-        cost: res.cost, models: res.model ? [res.model] : [], crashed: tokens === 0, error: res.error,
+        cost: res.cost, models: res.model ? [res.model] : [],
+        // An agent that errored out (usage cap, not logged in) never really
+        // tried, so it is kept out of the pass rate rather than counted as a fail.
+        crashed: tokens === 0 || res.error !== null, error: res.error,
       };
       await fs.appendFile(outFile, JSON.stringify(row) + "\n");
       console.log(
         `${task.padEnd(28)} ${agent.padEnd(11)} #${r} ${pass ? "PASS" : "FAIL"} tokens=${tokens} ` +
-          `(new ${res.usage.input}, cached ${res.usage.cached}, out ${res.usage.output}) ${res.model ?? ""}`,
+          `(new ${res.usage.input}, cache read ${res.usage.cached}, cache write ${res.usage.cacheWrite}, out ${res.usage.output}) ${res.model ?? ""}`,
       );
     }
   }
