@@ -300,3 +300,24 @@ Live runs after the change, gateway restarted:
 The benchmark code paths are unchanged for unmarked repos, so the recorded results still apply. Pointed the Redis address in the gateway template at 127.0.0.1 to match the loopback binding in `docker-compose.yml`.
 
 Rechecked the headline number. 68% is the mean per run, and tasks 01-06 have more repeats than 07-17. Averaging per task first gives 10,878 naive and 4,931 Thrift tokens, 55% fewer. Thrift was cheaper on 15 of 17 tasks and more expensive on 16 and 17. The README now gives both figures.
+
+### Outages, tests and the stale-claim set, November 11
+
+The brief also asks the agent to keep going when providers fail. Bifrost already moved between providers, but when the whole chain failed the run just crashed and the work was lost. Now the CLI waits and retries a 429, a 5xx or a network error (5, 15, 30, then 60 seconds, or the `retry-after` hint if it is shorter). A 402 is never retried. If the retries run out, the run is saved to `.thrift/session.json` with its messages, step count, tokens and mode, and `npm start -- --resume` continues from the next step. A resumed private run stays private. A clean finish deletes the file.
+
+Tested it live by stopping the gateway in the middle of the cart task. The CLI printed the wait, gave up after the last retry and saved the run. After restarting the gateway, `--resume` finished the fix on the next step.
+
+Added tests, since nothing checked these paths before. `npm test` runs 17 tests with `node:test`. The CLI tests start the real agent against a mock gateway: fallback notice, retry after a 503, save and resume, the 402 stop, a marked private repo, the naive refusal, a declined write that never reaches the tool server, and an unknown tool asking for approval. One bug came out of this: the approval prompt crashed with `ERR_USE_AFTER_CLOSE` when stdin was a pipe. Answers now come from a line queue, and a closed input counts as "no".
+
+The freshness numbers on tasks 15-17 never showed whether the check is any good, because the model solved those tasks either way. So we wrote 30 labeled claims (`bench/stale/claims.json`), 16 stale and 14 current, and checked the uncertain ones by hand with Tavily. Some surprised us: Zod 4 dropped `.errors`, Next.js 16 removed `next lint`, Node 22 is supported until April 2027. `npm run stale-eval` judges each claim from memory and with Tavily.
+
+- v1, one judge call for all claims, cited URL must match exactly: 20/30 with Tavily. Several right verdicts became unknown because the judge dropped the query string from the URL.
+- v2, the quote is matched against every excerpt and the source is whichever excerpt holds it: 21/30.
+- v3, one judge call per claim at temperature 0: 26/30 and 27/30 on two runs, 15 of 16 stale claims caught each time.
+- v4, v3 plus low reasoning effort on the judge: 22/30. Reverted.
+
+Memory alone got between 18 and 24 out of 30 and passed 3 to 7 stale claims as current in every run. Over all runs memory passed 21 of 80 stale claims as current. Tavily passed 0 of 80 and raised no false alarms on 70 current claims.
+
+While doing this, claim extraction sometimes came back empty. gpt-oss spent the whole 2,048 token reply on reasoning. Extraction now asks for low reasoning effort. The judge keeps the default because v4 showed it is less accurate without it.
+
+Settled verdicts and claim lists now go into a file cache for 7 days, keyed by the claim, version and search settings. The benchmark turns it off so every attempt pays full price.

@@ -69,10 +69,10 @@ The problem statement lists four mandatory behaviors. This is where each one liv
 
 | Requirement | How Thrift does it | Evidence |
 |---|---|---|
-| Keep working through outages and rate limits, and tell the user | Every request carries a fallback chain (Groq, then Gemini, then local Ollama). When a fallback answers, the CLI prints which model took over and the run goes on with that model. | Fallback scene: Groq failed on step 1, Gemini finished the fix |
-| Enforce individual spending limits before model calls | Each user gets a Bifrost virtual key with its own budget. Bifrost checks the budget before it forwards a request. On HTTP 402 the agent stops and says why. | Budget scene: step 2 got 402 and nothing else was sent |
+| Keep working through outages and rate limits, and tell the user | Every request carries a fallback chain (Groq, then Gemini, then local Ollama). When a fallback answers, the CLI prints which model took over and the run goes on with that model. If every model in the chain fails, the CLI says so, waits (5, 15, 30, then 60 seconds) and tries again. If that also fails, it saves the run to `.thrift/session.json` and `npm start -- --resume` picks it up at the next step. | Fallback scene: Groq failed on step 1, Gemini finished the fix. CLI tests cover the retry after a 503 and a resume after an outage |
+| Enforce individual spending limits before model calls | Each user gets a Bifrost virtual key with its own budget. Bifrost checks the budget before it forwards a request. On HTTP 402 the agent stops, says the key's limit is reached and keeps the run for `--resume`. It does not retry a 402. | Budget scene: step 2 got 402 and nothing else was sent |
 | Confidential repos only go to local models | A repo marked with a `.thrift-private` file, or `"thrift": { "private": true }` in its `package.json`, always runs through the `thrift-private` key, which can only reach Ollama. The Tavily check is skipped. The marker is read from disk, so the task text cannot switch it off, and the baseline agent refuses to run on such a repo. | Private scene, plus a run whose task said to ignore privacy settings. Every step still went to qwen2.5-coder:7b |
-| Reads are free, writes, shell and Git need approval | `list_files` and `read_file` run without asking. Every other tool call waits for a yes in the terminal, with a diff for file writes. The check happens in the CLI after the model answers, so a prompt cannot skip it. A "no" ends the run. | Approval scene: the denied `git push` never ran |
+| Reads are free, writes, shell and Git need approval | `list_files` and `read_file` run without asking. Every other tool call waits for a yes in the terminal, with a diff for file writes. The check happens in the CLI after the model answers, so a prompt cannot skip it. A "no" or a closed input ends the run. | Approval scene: the denied `git push` never ran. A CLI test checks that a declined write never reaches the MCP server |
 
 ## Why
 
@@ -145,6 +145,29 @@ The check ran 15 successful searches across 5 of 9 thrift runs. The judge accept
 
 See the [freshness dashboard](docs/demo/bench.png) and [raw runs](bench/results/run-2026-11-09T14-53-34-479Z.jsonl).
 
+### Stale-claim accuracy
+
+The coding tasks above say little about the detector itself, because the model often solved them without the check. So we built a labeled set: [30 claims](bench/stale/claims.json) about API behavior, versions, prices, company leadership and laws, 16 of them out of date in November 2026 and 14 still true. Where we were not sure of the answer ourselves we looked it up first.
+
+`npm run stale-eval` sends every claim to the same small model twice. Once it answers from memory. Once it gets Tavily excerpts and has to quote one of them. These are the two runs with the current settings (v3):
+
+| Judge | Right | Stale caught | Stale passed as current | False alarms | Unknown | Tokens per claim |
+|---|---:|---:|---:|---:|---:|---:|
+| Memory only | 18/30 | 9/16 | 3/16 | 1/14 | 8 | 375 |
+| Tavily, run 1 | 26/30 | 15/16 | 0/16 | 0/14 | 4 | 1,767 |
+| Tavily, run 2 | 27/30 | 15/16 | 0/16 | 0/14 | 3 | 1,801 |
+
+The worst mistake a detector can make is to call a stale claim current. Across all five memory runs the model did that 21 times out of 80. Across every Tavily run, including the weaker settings we tried before v3, it happened 0 times out of 80, and no current claim was flagged as stale (0 of 70). When the evidence is thin the answer is "unknown". The claims left unknown were the Express 5 wildcard, Moment.js maintenance mode, the Lambda free tier and once node-fetch.
+
+Getting there took four versions, all kept in [bench/stale/results](bench/stale/results). v1 judged every claim in one call and matched the cited URL exactly, which threw away right answers when the URL lost its query string. v2 matched the quote against all excerpts instead. v3 gives each claim its own judge call at temperature 0. v4 also set low reasoning effort on the judge and dropped to 22/30, so only claim extraction keeps that setting.
+
+```bash
+npm run stale-eval                      # memory and tavily
+npm run stale-eval -- --modes tavily    # tavily only
+```
+
+Settled verdicts and claim lists are cached in `.thrift/freshness-cache.json` for 7 days, so a second run on the same dependencies skips the searches and the judge. `THRIFT_FRESHNESS_CACHE=off` turns this off, and the benchmark keeps it off so every attempt pays the full cost.
+
 ## Demo scenarios
 
 Each scene below was recorded on the live dashboard. The numbers are from those single runs, not averages.
@@ -188,8 +211,12 @@ flowchart LR
 | Context | `agent/src/context.ts` | File ranking, repo context, history trimming |
 | Freshness check | `agent/src/freshness.ts` | Claim extraction, Tavily lookup, scoring |
 | Answer checker | `agent/src/check.ts` | Runs the same check on any LLM answer from a file or stdin |
+| Stale-claim eval | `agent/src/stale-eval.ts`, `bench/stale/` | Labeled claims, memory vs Tavily judge |
+| Policy | `agent/src/policy.ts` | Confidential marker, approval rule, retry delays |
+| Sessions and cache | `agent/src/session.ts`, `agent/src/cache.ts` | Saved runs for `--resume`, freshness cache |
 | Gateway client | `agent/src/gateway.ts` | One chat call through Bifrost, with routing and usage headers |
 | Workspace tools | `agent/src/workspace-server.ts` | Stdio MCP server with read, write, list and run |
+| Tests | `agent/test/` | Unit tests and CLI tests against a mock gateway |
 | Benchmark | `agent/src/bench.ts`, `agent/src/summarize.ts`, `bench/` | Runner, summary, 17 tasks with reference solutions |
 | Gateway config | `bifrost/config.template.json`, `scripts/gateway.sh` | Providers, keys, budgets, routing rules, cache, MCP |
 | Dashboard | `dashboard/` | Live run view and benchmark results |
@@ -237,11 +264,19 @@ set -a; . ../.env; set +a
 npm start -- "Prices come out wrong when a percent coupon is applied at checkout. Fix it."
 ```
 
-Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check. To mark a repo as confidential for good, add an empty `.thrift-private` file to it. Thrift then uses private mode whether or not you pass the flag.
+Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check, `--resume` continues a run that stopped on an outage or a spent budget. To mark a repo as confidential for good, add an empty `.thrift-private` file to it. Thrift then uses private mode whether or not you pass the flag.
 
 To work on another checkout, set `THRIFT_WORKSPACE` in `.env` to its path. Relative paths start from the Thrift repo root. Restart the gateway with `scripts/gateway.sh --fresh` after changing workspaces. This resets the local Bifrost databases. Use the default workspace for the benchmark.
 
 After moving the Thrift checkout, `scripts/gateway.sh --config-only` rewrites the generated MCP paths without touching the running gateway or its databases.
+
+### Tests
+
+```bash
+npm test --prefix agent
+```
+
+The unit tests cover the approval rule, retry delays, the private marker, saved sessions, history trimming and the quote check. The CLI tests start the real agent against a small mock gateway and check the fallback notice, the retry after a 503, save and resume, the 402 stop, private mode on a marked repo and a declined write. They need no API keys.
 
 ### Environment
 
