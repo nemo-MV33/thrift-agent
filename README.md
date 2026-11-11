@@ -35,27 +35,44 @@
 
 ## Results
 
-On 17 shared tasks, Thrift used **68% fewer tokens per run**. Naive passed 24/24 valid runs and Thrift passed 31/31.
+On the 17 benchmark tasks, Thrift passed **17/17** with an average of **3,150 tokens per task**. The naive baseline needed 10,878, so Thrift used **71% fewer tokens**. It was cheaper on 15 of the 17 tasks.
 
-| Mode | Passed / valid runs | Avg tokens | Avg model cost | Avg time |
+| Agent | Passed | Avg tokens per task | Avg model cost | Avg time |
 |---|---:|---:|---:|---:|
-| naive | 24/24 | 11,126 | $0.00176 | 29.9 s |
-| thrift | 31/31 | 3,579 | $0.00064 | 22.2 s |
+| naive (full history, one model) | 24/24 valid runs | 10,878 | $0.00182 | 29.9 s |
+| Thrift | 17/17 | 3,150 | $0.00132 | 27.0 s |
 
-The comparison pools the November 7 runs on tasks 01-06 and the November 9 runs on tasks 05-17. It reports means per valid run, so earlier tasks with more repeats carry more weight. Tasks 07-17 have one run per mode. If you average each task first and then average the 17 task means, naive comes to 10,878 tokens and Thrift to 4,931, which is 55% fewer. Thrift used fewer tokens on 15 of the 17 tasks. The benchmark excludes 8 attempts stopped by provider errors and omits 4 missing gateway costs from the cost averages. The earlier fallback and freshness experiments are recorded separately in the [journal](docs/journal.md). Thrift used more tokens on tasks 16 and 17. Both involved the freshness check, and task 17 also used more coding tokens.
+Each task is averaged first, then the 17 task means are averaged, so tasks with more repeats don't count extra. Averaged per run instead, as the dashboard does, it is 11,126 against 3,150, 72% fewer. Fourteen tasks finished in a single model call. The two tasks where Thrift spent more than naive are 16 and 17, which run the Tavily check: the coding part alone came to 3,495 and 11,570 tokens, under naive on both, and the check's 3,379 and 4,858 tokens put it over. The cost gap is smaller than the token gap because Groq's daily quota for the small model ran out during the run and 16 calls fell back to Gemini, which costs more per token.
+
+The Thrift numbers come from one run per task on November 11, after the [`write_files` change](#how-it-saves-tokens). The naive runs are the recorded ones from November 7 and 9. The naive agent and its tools did not change between them. The first Thrift suite, before `write_files`, averaged 4,931 tokens per task (55% fewer than naive) with 31/31 passes. Its files are listed in [paired-suite.json](bench/results/paired-suite.json).
 
 ### By difficulty
 
-| Tier | Tasks | Naive pass | Naive avg tokens | Thrift pass | Thrift avg tokens |
-|---|---:|---:|---:|---:|---:|
-| Simple | 7 | 14/14 | 10,630 | 18/18 | 2,595 |
-| Medium | 7 | 7/7 | 10,758 | 10/10 | 3,900 |
-| Complex | 3 | 3/3 | 14,299 | 3/3 | 8,416 |
+| Tier | Tasks | Naive avg tokens | Thrift avg tokens | Change |
+|---|---:|---:|---:|---:|
+| Simple | 7 | 9,531 | 3,063 | -68% |
+| Medium | 7 | 10,758 | 3,665 | -66% |
+| Complex | 3 | 14,299 | 2,151 | -85% |
+
+The complex tasks gained the most from `write_files`. They touch several files, and with one write per reply each extra file cost a full round trip.
+
+### Against Codex
+
+We also put Codex CLI (the agent that ships with ChatGPT, model gpt-6.1-sol at low reasoning effort) on the same 17 tasks with `npm run compare`. Each attempt ran in a fresh copy of the fixture with approvals off, and `npm test` on the restored tests decided pass or fail.
+
+| Agent | Passed | Avg tokens per task | Of which cached input | Uncached tokens |
+|---|---:|---:|---:|---:|
+| Codex | 17/17 | 91,290 | 77,327 | 13,963 |
+| Thrift | 17/17 | 3,150 | 0 | 3,150 |
+
+Both solved every task. Codex reads about 29 times as many tokens per task. Most of that is its own system prompt and tool definitions, which the provider caches and bills at a discount, so a fairer line is uncached tokens: there Codex still used 4.4 times as many, and more than Thrift on 16 of 17 tasks. The models differ (a frontier model against gpt-oss on Groq), so this compares the agents as you would use them, not the models. One run per task. [Raw runs](bench/results/run-2026-11-11T15-05-14-608Z.jsonl).
+
 
 Reproduce the comparison with the source files:
 
 ```bash
 cd agent
+npm run summarize -- ../bench/results/run-2026-11-11T15-00-30-224Z.jsonl
 npm run summarize -- \
   ../bench/results/run-2026-11-07T06-17-12-387Z.jsonl \
   ../bench/results/run-2026-11-09T15-07-00-878Z.jsonl \
@@ -89,6 +106,7 @@ Thrift sends relevant files in the first prompt and trims old tool output. It ru
 | Context up front | `agent/src/context.ts` | Relevant files ranked and sent in the first prompt, no list and read round trips |
 | History trimming | `agent/src/context.ts` | Old tool output becomes a one line stub, and a file's old copy is dropped once the model writes a new one |
 | Agent runs the tests | `agent/src/index.ts` | Thrift runs `npm test` after an edit and can stop without another model call. |
+| All edits in one call | `write_files` in `agent/src/workspace-server.ts` | gpt-oss on Groq returns one tool call per reply, so a three-file fix took three round trips, each resending the context. Thrift's key gets a tool that writes every file at once. On the rename task this took 11,410 tokens in 4 steps down to 2,289 in 1. |
 | Semantic cache | Bifrost `semantic_cache` plugin on Redis | Repeated requests can reuse cached responses. Each benchmark attempt uses a separate cache key. |
 
 ## What Bifrost does
@@ -100,7 +118,7 @@ Every model call and every tool call goes through the gateway.
 | Complexity router | Tags each task SIMPLE, MEDIUM or COMPLEX with local embeddings (`nomic-embed-text` on Ollama). Routing rules pick the model per tier |
 | Fallbacks | Each tier has its own chain: Groq, then Gemini, then local Ollama. If a provider rate limits or goes down mid task, the request moves on and the agent keeps working |
 | MCP with manual execution | Workspace tools (read, write, list, run) come from our stdio MCP server through Bifrost. Bifrost returns tool calls, the agent executes them, so risky ones can be confirmed first |
-| Virtual keys and budgets | `thrift-dev` has a daily budget, `thrift-private` can only reach Ollama, `thrift-baseline` is the naive agent. When a budget runs out the gateway answers 402 and the agent stops cleanly |
+| Virtual keys and budgets | Each key also lists its MCP tools: `thrift-dev` gets `write_files`, the baseline and private keys keep `write_file`. `thrift-dev` has a daily budget, `thrift-private` can only reach Ollama, `thrift-baseline` is the naive agent. When a budget runs out the gateway answers 402 and the agent stops cleanly |
 | Semantic cache | Redis backed, one namespace per run in the benchmark so runs don't share answers |
 | Logs and cost | `/api/logs` gives cost, tier and routing rule per request. The benchmark and the dashboard read them |
 
@@ -298,6 +316,7 @@ There are 17 small Node repos with failing tests in `bench/tasks/` (7 simple, 7 
 | `naive` | One model (gpt-oss-120b), no context up front, full history every step |
 | `thrift` | Everything above |
 | `stale` | Thrift with the freshness check off |
+| `thrift-no-*` | Thrift with one technique off, see below |
 
 ```bash
 cd agent
@@ -310,7 +329,27 @@ npm run bench -- --only 15,16,17 --modes stale,thrift --runs 3
 npm run summarize -- ../bench/results/<file>.jsonl
 ```
 
+To run other agents on the same tasks, point `CLAUDE_BIN` and `CODEX_BIN` at their CLIs (they default to `claude` and `codex` on your PATH) and run:
+
+```bash
+npm run compare -- --agents codex,claude-code --runs 1
+```
+
 The runner replaces the contents of `sandbox/demo-app` for each attempt. Keep your own files outside it. Each batch writes a new JSONL file in `bench/results/`. Pass multiple JSONL paths to `summarize` to combine batches from the same experiment.
+
+### What each technique is worth
+
+`--no-context`, `--no-trim`, `--no-autotest` and `--no-route` each turn off one technique, so the bench can show what it saves (`--modes thrift,thrift-no-context,...`). One run per mode on 9 tasks, before `write_files` existed:
+
+| Mode | Passed | Avg tokens | Avg steps | Avg cost |
+|---|---:|---:|---:|---:|
+| Thrift | 9/9 | 2,921 | 1.8 | $0.00082 |
+| Without context up front | 6/9 | 7,212 | 7.3 | $0.00464 |
+| Without the agent running tests | 9/9 | 6,283 | 4.1 | $0.00288 |
+| Without history trimming | 9/9 | 3,411 | 1.9 | $0.00094 |
+| Without routing | 9/9 | 3,023 | 1.9 | $0.00067 |
+
+Sending the right files in the first prompt matters most. Without it the model spends steps listing and reading files, and 3 of 9 runs failed. Two of those ran long enough that Groq and Gemini both rate limited them and the chain ended on the local 7b model. Running the tests in the agent saves the round trips where the model asks for `npm test` and then says it is done. Trimming only pays on longer runs: on the 4-step rename task it saved about a quarter of the tokens. Routing made almost no difference to tokens in this run and cost slightly more, because the small model's Groq quota ran out and those tasks fell back to Gemini. With one run per mode these numbers show direction, not exact sizes. [Raw runs](bench/results/run-2026-11-11T14-15-58-263Z.jsonl).
 
 See [docs/journal.md](docs/journal.md) for the run history.
 

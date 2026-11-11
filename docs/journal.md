@@ -321,3 +321,17 @@ Memory alone got between 18 and 24 out of 30 and passed 3 to 7 stale claims as c
 While doing this, claim extraction sometimes came back empty. gpt-oss spent the whole 2,048 token reply on reasoning. Extraction now asks for low reasoning effort. The judge keeps the default because v4 showed it is less accurate without it.
 
 Settled verdicts and claim lists now go into a file cache for 7 days, keyed by the claim, version and search settings. The benchmark turns it off so every attempt pays full price.
+
+### One call for all edits, November 11
+
+Ran each technique switched off on 9 tasks, one run each. Context up front matters most: without it the average went from 2,921 to 7,212 tokens and 3 runs failed. Without the agent running the tests it was 6,283. Trimming and routing changed little on these short runs.
+
+Then looked at the most expensive Thrift task, 12 (rename a field across three files, 11,410 tokens). The trace showed the model running the failing tests first, then writing one file per step, with the full context resent each time. A direct call through Bifrost confirmed that gpt-oss on Groq returns one tool call per reply even when asked for two, so no prompt can fix that.
+
+The workspace server now has `write_files`, which takes every changed file in one call. Bifrost lets each virtual key list its MCP tools, so `thrift-dev` gets `write_files` while `thrift-baseline` and `thrift-private` keep `write_file`. The baseline sees exactly the tools it had in the recorded runs. The prompt now says to make every change in one reply and leave the tests to the agent. Task 12 went to 2,289 tokens in one step.
+
+Also started comparing with agents people actually use. `npm run compare` copies each fixture to a temp directory, runs Claude Code (`claude -p`) or Codex (`codex exec`) without prompts, puts the protected tests back and runs `npm test`. Tokens are what each agent reports, cached input included, with the split kept in the row. A first Codex run on task 04 passed with 92,109 tokens, 65,920 of them cached. Thrift used 1,294 on the same task.
+
+Full run after the change, one attempt per task: 17/17 passed, 3,150 tokens per task on average against 10,878 for naive, 71% fewer. Fourteen tasks took a single model call. Thrift still spent more than naive on 16 and 17, both because of the Tavily check (3,379 and 4,858 tokens). The coding part alone was under naive on both. Groq's daily quota for gpt-oss-20b ran out partway, so 16 calls went to Gemini and the cost only fell 27%.
+
+Codex on all 17 tasks: 17/17, 91,290 tokens per task of which 77,327 were cached input, 13,963 uncached. Thrift used fewer uncached tokens on 16 of the 17. Claude Code could not run yet because its CLI is not logged in on this machine.
