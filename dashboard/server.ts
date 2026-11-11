@@ -297,6 +297,32 @@ function readBench(name: string): { name: string; rows: any[]; summary: unknown 
   return { name, rows, summary };
 }
 
+// Stale-claim runs from agent/src/stale-eval.ts, one row per claim and mode.
+const staleDir = path.join(root, "bench", "stale", "results");
+
+function readStale() {
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(staleDir).filter((f) => rawBenchFile.test(f)).sort();
+  } catch {
+    return [];
+  }
+  return names.map((name) => ({
+    name,
+    rows: fs
+      .readFileSync(path.join(staleDir, name), "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .flatMap((l) => {
+        try {
+          return [JSON.parse(l)];
+        } catch {
+          return [];
+        }
+      }),
+  }));
+}
+
 // ---------- HTTP ----------
 
 function send(res: http.ServerResponse, status: number, body: unknown) {
@@ -382,6 +408,7 @@ const server = http.createServer(async (req, res) => {
 
   if (p === "/api/gateway") return send(res, 200, { online: gatewayOnline, url: BIFROST_URL, feed });
   if (p === "/api/bench") return send(res, 200, listBench());
+  if (p === "/api/stale") return send(res, 200, readStale());
 
   const benchMatch = p.match(/^\/api\/bench\/(.+)$/);
   if (benchMatch) {

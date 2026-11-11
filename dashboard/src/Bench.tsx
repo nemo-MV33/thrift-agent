@@ -78,6 +78,7 @@ export function BenchPage() {
         </label>
       </div>
       {!rows ? <div className="skeleton"><div className="sk sk-row" /><div className="sk sk-card" /></div> : rows.length === 0 ? <Empty title="This file is empty" body="Pick another results file." /> : <BenchBody rows={rows} />}
+      <StaleClaims />
     </div>
   );
 }
@@ -363,6 +364,70 @@ function FreshSection({ rows }: { rows: BenchRow[] }) {
             </li>
           ))}
         </ul>
+      </div>
+    </section>
+  );
+}
+
+type StaleRow = { id: string; mode: string; truth: string; status: string; tokens: number; search: { name: string; judge: string } | null };
+
+// Labeled claims from bench/stale/claims.json. Memory is the judge with no
+// evidence; each Tavily setting is one version of the search and judge.
+function StaleClaims() {
+  const [files, setFiles] = useState<{ name: string; rows: StaleRow[] }[] | null>(null);
+  useEffect(() => {
+    getJSON<{ name: string; rows: StaleRow[] }[]>("/api/stale").then(setFiles).catch(() => setFiles([]));
+  }, []);
+  if (!files?.length) return null;
+  const all = files.flatMap((f) => f.rows);
+  const groups = new Map<string, StaleRow[]>();
+  for (const r of all) {
+    const key = r.mode === "memory" ? "memory" : `tavily ${r.search?.name ?? "?"}`;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const keys = [...groups.keys()].sort((a, b) => (a === "memory" ? -1 : b === "memory" ? 1 : a.localeCompare(b)));
+  const count = (rows: StaleRow[], f: (r: StaleRow) => boolean) => rows.filter(f).length;
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Stale-claim check</h2>
+        <span className="muted">{files.length} runs over {new Set(all.map((r) => r.id)).size} labeled claims</span>
+      </header>
+      <div className="table-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Judge</th>
+              <th className="r">Claims judged</th>
+              <th className="r">Right</th>
+              <th className="r">Stale caught</th>
+              <th className="r">Stale passed as current</th>
+              <th className="r">False alarms</th>
+              <th className="r">Unknown</th>
+              <th className="r">Tokens per claim</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((key) => {
+              const rows = groups.get(key)!;
+              const stale = rows.filter((r) => r.truth === "outdated");
+              const fresh = rows.filter((r) => r.truth === "current");
+              const passed = count(stale, (r) => r.status === "current");
+              return (
+                <tr key={key}>
+                  <td className="mono" title={rows[0].search?.judge ?? "no evidence, the model's own memory"}>{key}</td>
+                  <td className="r num">{rows.length}</td>
+                  <td className="r num">{fmtPct(count(rows, (r) => r.status === r.truth) / rows.length)}</td>
+                  <td className="r num">{count(stale, (r) => r.status === "outdated")} of {stale.length}</td>
+                  <td className={`r num ${passed ? "neg" : "pos"}`}>{passed} of {stale.length}</td>
+                  <td className="r num">{count(fresh, (r) => r.status === "outdated")} of {fresh.length}</td>
+                  <td className="r num">{count(rows, (r) => r.status === "unknown")}</td>
+                  <td className="r num">{fmtInt(avgKnown(rows.map((r) => r.tokens)))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </section>
   );
