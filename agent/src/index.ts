@@ -10,6 +10,7 @@ import { buildContext, compactHistory, dropFile, type Message, type ToolCall } f
 import { GATEWAY, GatewayError, gatewayChat, smallModelChat } from "./gateway.js";
 import { markedPrivate, needsApproval, retryDelay } from "./policy.js";
 import { clearSession, loadSession, saveSession, type Session } from "./session.js";
+import { FileCache } from "./cache.js";
 
 const args = process.argv.slice(2);
 const autoYes = args.includes("--yes");
@@ -228,13 +229,18 @@ let freshness: Awaited<ReturnType<typeof checkFreshness>> = null;
 let freshnessFailed = false;
 if (fresh) {
   // Claim extraction and judging are short JSON jobs, the small model is enough.
-  freshness = await checkFreshness(workspace, task, async (msgs) => {
-    const r = await smallModelChat(headers, msgs);
+  // Settled verdicts are reused for a week. The benchmark turns this off so
+  // every attempt pays for its own check.
+  const cache = process.env.THRIFT_FRESHNESS_CACHE === "off"
+    ? undefined
+    : new FileCache(process.env.THRIFT_FRESHNESS_CACHE_FILE ?? path.join(root, ".thrift", "freshness-cache.json"));
+  freshness = await checkFreshness(workspace, task, async (msgs, purpose) => {
+    const r = await smallModelChat(headers, msgs, purpose);
     usage.push(r.record);
     const used = r.usage.total_tokens ?? 0;
     tokens += used;
     return { content: String(r.message.content ?? ""), tokens: used, requestId: r.requestId };
-  }).catch((e) => {
+  }, cache).catch((e) => {
     freshnessFailed = true;
     console.log(red(`freshness check skipped: ${e.message}`));
     return null;
@@ -242,8 +248,9 @@ if (fresh) {
   if (freshness) {
     emit("freshness", {
       verdicts: freshness.verdicts, searches: freshness.searches, failedSearches: freshness.failedSearches,
-      tokens: freshness.tokens, ms: freshness.ms,
+      tokens: freshness.tokens, ms: freshness.ms, cached: freshness.cached,
     });
+    if (freshness.cached) console.log(gray(`[fresh] ${freshness.cached} of ${freshness.verdicts.length} claims answered from the cache`));
     if (freshness.failedSearches) console.log(gray(`[fresh] ${freshness.failedSearches} of ${freshness.searches} web searches failed`));
     for (const v of freshness.verdicts)
       console.log(gray(`[fresh] ${v.library}: ${v.status} (${v.freshness}) ${v.claim}`));

@@ -9,7 +9,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { searchSettings, verifyClaims, type Claim } from "./freshness.js";
-import { smallModelChat } from "./gateway.js";
+import { smallModelChat, type Purpose } from "./gateway.js";
 
 type Labeled = Claim & { id: string; category: string; subject: string; truth: "current" | "outdated" };
 type Status = "current" | "outdated" | "unknown";
@@ -29,8 +29,8 @@ const today = new Date().toISOString().slice(0, 10);
 
 const headers = { "Content-Type": "application/json", "x-bf-vk": process.env.THRIFT_VK_DEV ?? "" };
 function chatCounting(counter: { tokens: number }) {
-  return async (messages: { role: string; content: string }[]) => {
-    const r = await smallModelChat(headers, messages);
+  return async (messages: { role: string; content: string }[], purpose: Purpose = "judge") => {
+    const r = await smallModelChat(headers, messages, purpose);
     const used = r.usage.total_tokens ?? 0;
     counter.tokens += used;
     return { content: String(r.message.content ?? ""), tokens: used, requestId: r.requestId, model: `${r.provider}/${r.servedModel}` };

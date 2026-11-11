@@ -5,6 +5,7 @@
 // put the corrected facts in front of the coding model.
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { FileCache } from "./cache.js";
 
 export type Claim = { library: string; version: string; claim: string; query: string };
 export type Verdict = {
@@ -15,9 +16,13 @@ export type Verdict = {
   correction: string;
   source: string | null;
 };
-export type FreshnessReport = { verdicts: Verdict[]; tokens: number; searches: number; failedSearches: number; ms: number; requestIds: string[] };
+export type FreshnessReport = {
+  verdicts: Verdict[]; tokens: number; searches: number; failedSearches: number; ms: number; requestIds: string[];
+  // Claims answered from the cache, with no search or judge call.
+  cached: number;
+};
 
-type Chat = (messages: { role: string; content: string }[]) => Promise<{ content: string; tokens: number; requestId: string | null }>;
+type Chat = (messages: { role: string; content: string }[], purpose?: "extract" | "judge") => Promise<{ content: string; tokens: number; requestId: string | null }>;
 type Judgement = Partial<Verdict> & { index?: number; quote?: string };
 
 async function dependencies(root: string): Promise<Record<string, string>> {
@@ -69,7 +74,8 @@ const unknownVerdict = (claim: Claim): Verdict => ({
 // Search settings, recorded with every evaluation run so results stay comparable.
 // v1 was 3 results with 600 characters each, an exact URL match and one judge
 // call for all claims. v2 kept more of each page and matched the quote, not
-// the URL. v3 also judges each claim on its own at temperature 0.
+// the URL. v3 also judges each claim on its own at temperature 0. Capping the
+// judge's reasoning (tried as v4) saved 15% of tokens but lost 5 of 30 claims.
 export const searchSettings = { name: "v3", maxResults: 5, chunksPerSource: 3, excerptChars: 1000, judge: "one claim per call, temperature 0" };
 
 async function tavily(query: string): Promise<{ url: string; content: string }[]> {
@@ -91,7 +97,7 @@ export function parseClaims(text: string): Claim[] {
   );
 }
 
-export async function checkFreshness(root: string, task: string, chat: Chat): Promise<FreshnessReport | null> {
+export async function checkFreshness(root: string, task: string, chat: Chat, cache?: FileCache): Promise<FreshnessReport | null> {
   const deps = await dependencies(root);
   const names = Object.keys(deps);
   // Plain Node repos have nothing to look up, so they pay nothing.
@@ -99,7 +105,10 @@ export async function checkFreshness(root: string, task: string, chat: Chat): Pr
   const started = Date.now();
   const versions = await Promise.all(names.map(async (n) => `${n}@${(await installed(root, n)) ?? deps[n]}`));
 
-  const ask = await chat([
+  // The same task against the same installed versions asks the same question.
+  const claimsKey = FileCache.key("claims", task, versions.join(","));
+  const remembered = await cache?.get<string>(claimsKey);
+  const ask = remembered !== undefined ? { content: remembered, tokens: 0, requestId: null } : await chat([
     {
       role: "user",
       content:
@@ -109,11 +118,12 @@ export async function checkFreshness(root: string, task: string, chat: Chat): Pr
         "major versions. Reply with JSON only: " +
         '[{"library":"","version":"","claim":"what you believe is true","query":"web search query to verify it"}]',
     },
-  ]);
+  ], "extract");
+  if (remembered === undefined) await cache?.set(claimsKey, ask.content);
   const claims = parseClaims(ask.content)
     .filter((claim) => [claim.library, claim.version, claim.claim, claim.query].every((value) => value.trim()))
     .slice(0, 3);
-  const checked = await verifyClaims(claims, chat, "Use the search excerpts as evidence for the exact API and version.");
+  const checked = await verifyClaims(claims, chat, "Use the search excerpts as evidence for the exact API and version.", cache);
   return {
     ...checked,
     tokens: ask.tokens + checked.tokens,
@@ -127,28 +137,34 @@ export async function checkFreshness(root: string, task: string, chat: Chat): Pr
  * excerpts. A verdict only counts when the judge copies a quote that really is
  * in an excerpt from the URL it names. Anything else stays unknown.
  */
-export async function verifyClaims(claims: Claim[], chat: Chat, intro: string): Promise<FreshnessReport> {
+const verdictKey = (c: Claim) => FileCache.key("verdict", c.library.toLowerCase(), c.version, normalized(c.claim));
+
+/**
+ * Searches each claim with Tavily and asks a model to judge it against the
+ * excerpts. A verdict only counts when the judge copies a quote that really is
+ * on one of the retrieved pages. Anything else stays unknown. With a cache,
+ * claims already settled for the same library version skip both steps.
+ */
+export async function verifyClaims(claims: Claim[], chat: Chat, intro: string, cache?: FileCache): Promise<FreshnessReport> {
   const started = Date.now();
   let tokens = 0;
   const requestIds: string[] = [];
+  const known = await Promise.all(claims.map((c) => cache?.get<Verdict>(verdictKey(c))));
+  const todo = claims.filter((_, i) => !known[i]);
   const evidence = await Promise.all(
-    claims.map(async (c) => {
+    todo.map(async (c) => {
       try {
         return { claim: c, results: await tavily(c.query), failed: false };
       } catch {
-        return { claim: c, results: [], failed: true };
+        return { claim: c, results: [] as { url: string; content: string }[], failed: true };
       }
     }),
   );
   const failedSearches = evidence.filter((entry) => entry.failed).length;
-  const report = (verdicts: Verdict[]): FreshnessReport => ({
-    verdicts, tokens, searches: evidence.length, failedSearches, ms: Date.now() - started, requestIds,
-  });
-  if (!evidence.some((entry) => entry.results.length)) return report(claims.map(unknownVerdict));
 
   // One judge call per claim, run in parallel. A small model handed several
   // claims and a dozen excerpts at once mixes them up and gives up more often.
-  const verdicts: Verdict[] = await Promise.all(
+  const fresh: Verdict[] = await Promise.all(
     evidence.map(async ({ claim, results }) => {
       if (!results.length) return unknownVerdict(claim);
       const judge = await chat([
@@ -172,7 +188,7 @@ export async function verifyClaims(claims: Claim[], chat: Chat, intro: string): 
       const holders = quote.length >= MIN_QUOTE ? results.filter((result) => normalized(result.content).includes(quote)) : [];
       const source = holders.find((result) => sameUrl(result.url, answer?.source)) ?? holders[0];
       if (!source || (answer?.status !== "current" && answer?.status !== "outdated")) return unknownVerdict(claim);
-      return {
+      const verdict: Verdict = {
         library: claim.library,
         claim: claim.claim,
         status: answer.status,
@@ -180,9 +196,17 @@ export async function verifyClaims(claims: Claim[], chat: Chat, intro: string): 
         correction: answer.status === "outdated" && typeof answer.correction === "string" ? answer.correction : "",
         source: source.url,
       };
+      // Only settled verdicts are kept. An unknown is worth another search later.
+      await cache?.set(verdictKey(claim), verdict);
+      return verdict;
     }),
   );
-  return report(verdicts);
+  let next = 0;
+  const verdicts = claims.map((_, i) => known[i] ?? fresh[next++]);
+  return {
+    verdicts, tokens, searches: evidence.length, failedSearches, ms: Date.now() - started, requestIds,
+    cached: claims.length - todo.length,
+  };
 }
 
 /** Notes for the coding model. Only sourced corrections enter the prompt. */

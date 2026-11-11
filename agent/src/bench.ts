@@ -54,7 +54,8 @@ function runAgent(prompt: string, mode: string, cacheKey: string): Promise<Agent
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: path.join(here, ".."),
-      env: { ...process.env, THRIFT_CACHE_KEY: cacheKey },
+      // Each attempt pays for its own freshness check, as in the recorded runs.
+      env: { ...process.env, THRIFT_CACHE_KEY: cacheKey, THRIFT_FRESHNESS_CACHE: process.env.THRIFT_FRESHNESS_CACHE ?? "off" },
     });
     let out = "";
     child.stdout.on("data", (d) => (out += d));

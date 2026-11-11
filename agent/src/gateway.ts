@@ -60,10 +60,18 @@ export async function gatewayChat(headers: Record<string, string>, payload: Reco
  * rules are skipped, so these calls never pick up workspace tools or a bigger
  * model. Temperature 0 keeps verdicts repeatable.
  */
-export function smallModelChat(headers: Record<string, string>, messages: { role: string; content: string }[]) {
+export function smallModelChat(headers: Record<string, string>, messages: { role: string; content: string }[], purpose: Purpose = "judge") {
   return gatewayChat(
     headers,
-    { model: "groq/openai/gpt-oss-20b", messages, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"], temperature: 0 },
+    {
+      model: "groq/openai/gpt-oss-20b", messages, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"], temperature: 0,
+      // gpt-oss can spend its whole reply budget reasoning and return no
+      // content. Listing claims needs little thought, so cap it there. The
+      // judge keeps the default, which measured more accurate.
+      ...(purpose === "extract" ? { reasoning_effort: "low" } : {}),
+    },
     { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
   );
 }
+
+export type Purpose = "extract" | "judge";

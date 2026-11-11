@@ -7,7 +7,7 @@
 //   pbpaste | npm run check
 import { promises as fs } from "node:fs";
 import { parseClaims, verifyClaims, type Claim } from "./freshness.js";
-import { smallModelChat } from "./gateway.js";
+import { smallModelChat, type Purpose } from "./gateway.js";
 
 const args = process.argv.slice(2);
 const asJson = args.includes("--json");
@@ -31,9 +31,9 @@ if (!process.env.TAVILY_API_KEY) {
 
 const headers = { "Content-Type": "application/json", "x-bf-vk": process.env.THRIFT_VK_DEV ?? "" };
 let tokens = 0;
-const chat = async (messages: { role: string; content: string }[]) => {
+const chat = async (messages: { role: string; content: string }[], purpose: Purpose = "judge") => {
   // Same small model and settings as the agent's own freshness check.
-  const r = await smallModelChat(headers, messages);
+  const r = await smallModelChat(headers, messages, purpose);
   const used = r.usage.total_tokens ?? 0;
   tokens += used;
   return { content: String(r.message.content ?? ""), tokens: used, requestId: r.requestId };
@@ -53,7 +53,7 @@ const extracted = await chat([
       '[{"library":"subject","version":"","claim":"","query":""}]\n\nAnswer:\n' +
       answer.slice(0, 8000),
   },
-]);
+], "extract");
 const claims: Claim[] = parseClaims(extracted.content)
   .filter((c) => c.library.trim() && c.claim.trim() && c.query.trim())
   .slice(0, 5);

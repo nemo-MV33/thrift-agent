@@ -134,3 +134,31 @@ test("no search results means no judge call and an unknown verdict", async () =>
     assert.equal(report.verdicts[0].status, "unknown");
   });
 });
+
+test("settled verdicts come from the cache on the next run, unknowns do not", async () => {
+  const { FileCache } = await import("../src/cache.js");
+  const dir = await tempRepo({});
+  const cache = new FileCache(path.join(dir, "cache.json"));
+  const page = { url: "https://zod.dev/v4/changelog", content: "In Zod 4 the .errors property is removed. Use error.issues instead." };
+  const other: Claim = { library: "zod", version: "4.1.0", claim: "Something nobody wrote about", query: "nothing" };
+  let judgeCalls = 0;
+  const judge = async (messages: { content: string }[]) => {
+    judgeCalls++;
+    const known = messages[0].content.includes("error.errors");
+    return {
+      content: JSON.stringify([known ? { index: 1, status: "outdated", source: page.url, quote: "Use error.issues instead." } : { index: 1, status: "unknown" }]),
+      tokens: 10, requestId: null,
+    };
+  };
+  await withTavily([page], async () => {
+    const first = await verifyClaims([claim, other], judge, "Check.", cache);
+    assert.equal(first.cached, 0);
+    assert.equal(judgeCalls, 2);
+    const second = await verifyClaims([claim, other], judge, "Check.", new FileCache(path.join(dir, "cache.json")));
+    assert.equal(second.cached, 1);
+    assert.equal(second.searches, 1);
+    assert.equal(judgeCalls, 3);
+    assert.equal(second.verdicts[0].status, "outdated");
+    assert.equal(second.verdicts[1].status, "unknown");
+  });
+});
