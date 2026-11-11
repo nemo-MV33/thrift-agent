@@ -6,7 +6,8 @@
     "start": "tsx src/index.ts",
     "bench": "tsx src/bench.ts",
     "summarize": "tsx src/summarize.ts",
-    "check": "tsx src/check.ts"
+    "check": "tsx src/check.ts",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
