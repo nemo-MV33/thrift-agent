@@ -3,21 +3,19 @@
 // leaves running them to us, so this is where risky calls get confirmed.
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFreshness, freshnessNotes } from "./freshness.js";
 import { buildContext, compactHistory, dropFile, type Message, type ToolCall } from "./context.js";
+import { GATEWAY, GatewayError, gatewayChat } from "./gateway.js";
 
-const GATEWAY = process.env.BIFROST_URL ?? "http://localhost:8080";
 const args = process.argv.slice(2);
-const isPrivate = args.includes("--private");
 const autoYes = args.includes("--yes");
 // --naive is the baseline for the benchmark: one strong model, no repo
 // context up front, full history every step.
 const naive = args.includes("--naive");
 const asJson = args.includes("--json");
-// Private repos never leave the machine, so no web lookups there either.
-const fresh = !naive && !isPrivate && !args.includes("--no-fresh");
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workspace = path.resolve(root, process.env.THRIFT_WORKSPACE ?? "sandbox/demo-app");
 const task = args.filter((a) => !a.startsWith("--")).join(" ");
@@ -28,6 +26,31 @@ if (!task) {
   process.exit(1);
 }
 
+// A repo is confidential if it says so itself, with a .thrift-private file or
+// "thrift": { "private": true } in package.json. The marker lives in the repo,
+// not in the task text, so nothing typed into a prompt can turn it off.
+async function markedPrivate(dir: string): Promise<boolean> {
+  if (await fs.access(path.join(dir, ".thrift-private")).then(() => true, () => false)) return true;
+  try {
+    return JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"))?.thrift?.private === true;
+  } catch {
+    return false;
+  }
+}
+const marked = await markedPrivate(workspace);
+const isPrivate = marked || args.includes("--private");
+if (marked && naive) {
+  console.error("This repository is marked confidential. The baseline agent uses a cloud model, so it will not run here.");
+  process.exit(1);
+}
+if (isPrivate && !process.env.THRIFT_VK_PRIVATE) {
+  console.error("Private mode needs THRIFT_VK_PRIVATE, the Ollama-only virtual key. Refusing to send the repo anywhere else.");
+  process.exit(1);
+}
+if (marked) console.log("This repository is marked confidential. Every model call stays on local Ollama.");
+// Private repos never leave the machine, so no web lookups there either.
+const fresh = !naive && !isPrivate && !args.includes("--no-fresh");
+
 const vk = isPrivate
   ? process.env.THRIFT_VK_PRIVATE
   : naive
@@ -36,9 +59,10 @@ const vk = isPrivate
 let model = isPrivate ? "ollama/qwen2.5-coder:7b" : "groq/openai/gpt-oss-120b";
 let fallbacks = isPrivate || naive ? [] : ["gemini/gemini-3.5-flash", "ollama/qwen2.5-coder:7b"];
 
-// Tools that change something on disk or run code need a yes from the user.
-const RISKY = new Set(["write_file", "run_command"]);
-
+// Reading is free. Every other tool, including any a future MCP server adds,
+// needs a yes from the user. The check runs here in the CLI, after the model
+// has answered, so no prompt can talk its way around it.
+const READ_ONLY = new Set(["list_files", "read_file"]);
 
 const headers: Record<string, string> = { "Content-Type": "application/json", "x-bf-vk": vk ?? "" };
 // The benchmark gives each run its own cache namespace so repeated runs
@@ -62,6 +86,7 @@ const rl = createInterface({ input: stdin, output: stdout });
 const gray = (s: string) => `\x1b[90m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
+const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 
 // Bifrost's complexity router only looks at the latest message. After the
 // first step that is a tool result ("exit 0 ..."), which says nothing about
@@ -70,45 +95,10 @@ const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 // the tier rules off for those requests (see bifrost/config.json).
 let pinned = false;
 
-// One gateway round trip. Shared by the agent loop and the freshness check
-// so both read usage and routing headers the same way.
-async function gatewayChat(payload: Record<string, unknown>, extra: Record<string, string> = {}) {
-  const res = await fetch(`${GATEWAY}/v1/chat/completions`, {
-    method: "POST",
-    headers: { ...headers, ...extra },
-    body: JSON.stringify(payload),
-  });
-  const body: any = await res.json();
-  if (!res.ok) throw new Error(`gateway ${res.status}: ${body?.error?.message ?? JSON.stringify(body)}`);
-  const usage = body.usage ?? {};
-  const provider = res.headers.get("x-bifrost-routing-info-provider") ?? res.headers.get("x-bifrost-provider");
-  const servedModel = res.headers.get("x-bifrost-routing-info-model");
-  const fallback = res.headers.get("x-bifrost-routing-info-is-fallback") === "true";
-  const requestId = res.headers.get("x-bifrost-request-id");
-  const cacheHit = res.headers.get("x-bifrost-cache-hit") === "true";
-  return {
-    message: body.choices[0].message as Message,
-    usage,
-    provider,
-    servedModel,
-    fallback,
-    requestId,
-    cacheHit,
-    record: {
-      model: `${provider}/${servedModel}`,
-      prompt: usage.prompt_tokens ?? 0,
-      completion: usage.completion_tokens ?? 0,
-      fallback,
-      cacheHit,
-      requestId,
-    },
-  };
-}
-
 function chat(messages: Message[]) {
   // A cap on output: a small local model that runs past its context window
   // can otherwise generate until the gateway times out (seen: 504 after 300 s).
-  return gatewayChat({ model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }, pinned ? { "x-thrift-pinned": "1" } : {});
+  return gatewayChat(headers, { model, messages, fallbacks, max_tokens: isPrivate ? 1500 : 4000 }, pinned ? { "x-thrift-pinned": "1" } : {});
 }
 
 async function execTool(call: ToolCall): Promise<Message> {
@@ -159,10 +149,15 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
     });
     const before = String(current.content ?? "").startsWith("error") ? "" : String(current.content);
     console.log(`\nwrite ${input.path}\n${diff(before, input.content)}`);
-  } else {
+  } else if (toolName === "run_command") {
     console.log(`\nrun: ${input.command}`);
+  } else {
+    console.log(`\n${toolName} ${call.function.arguments}`);
   }
-  const detail = toolName === "write_file" ? { path: input.path } : { command: input.command };
+  const detail =
+    toolName === "write_file" ? { path: input.path }
+    : toolName === "run_command" ? { command: input.command }
+    : { command: `${toolName} ${call.function.arguments.slice(0, 200)}` };
   if (autoYes) {
     emit("approval", { tool: toolName, ...detail, approved: true, auto: true });
     return true;
@@ -194,6 +189,7 @@ if (fresh) {
   freshness = await checkFreshness(workspace, task, async (msgs) => {
     // The name "none" matches no MCP client. These calls only return JSON.
     const r = await gatewayChat(
+      headers,
       { model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
       { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
     );
@@ -279,6 +275,10 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     r = await chat(naive ? messages : compactHistory(messages));
   } catch (e: any) {
     console.log(red(e.message));
+    // Bifrost checks the virtual key's budget before it forwards a request,
+    // so a 402 means nothing was sent and nothing was spent on this step.
+    if (e instanceof GatewayError && e.status === 402)
+      console.log(red("Spending limit for this virtual key is reached. Stopping before any further model call. Files written so far stay as they are."));
     error = e.message;
     emit("error", { step, message: e.message });
     break;
@@ -296,6 +296,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
   usage.push(r.record);
   const route = `${r.provider}/${r.servedModel}${r.fallback ? " (fallback)" : ""}`;
   console.log(gray(`[step ${step}] ${route}  tokens ${r.usage.total_tokens ?? "?"}`));
+  if (r.fallback) console.log(yellow(`The requested model did not answer. ${r.provider}/${r.servedModel} took over and the run continues.`));
   emit("step", {
     step,
     provider: r.provider,
@@ -325,7 +326,7 @@ for (let step = 1; step <= 15 && !stopped; step++) {
     emit("tool", { step, tool: toolName, args: call.function.arguments.slice(0, 300) });
     // A "no" ends the run. Otherwise models tend to retry the same change
     // through another tool, which defeats the point of asking.
-    if (RISKY.has(toolName) && !(await confirm(call, toolName))) {
+    if (!READ_ONLY.has(toolName) && !(await confirm(call, toolName))) {
       console.log("rejected, stopping");
       stopped = true;
       break;
