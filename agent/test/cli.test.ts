@@ -141,3 +141,15 @@ test("write_files shows a diff for every file and asks once", async () => {
     assert.match(gw.chats()[0].body.messages[0].content, /single write_files call/);
   });
 });
+
+test("broken tool arguments go back to the model instead of crashing", async () => {
+  const broken = { role: "assistant", content: null, tool_calls: [{ id: "b1", type: "function", function: { name: "ws-write_files", arguments: '{"files":[{"path":"src/cart.js","content":"export' } }] };
+  const gw = new MockGateway([{ message: broken }, { message: writeCall("src/cart.js", "export const x = 2;\n") }], passingTests);
+  await withGateway(gw, async () => {
+    const dir = await repo();
+    const { code, out } = await runCli(["fix it", "--yes", "--no-fresh"], { BIFROST_URL: gw.url, THRIFT_WORKSPACE: dir, THRIFT_SESSION_FILE: path.join(dir, "s.json") });
+    assert.equal(code, 0);
+    assert.match(out, /tests pass after the edit, done/);
+    assert.match(JSON.stringify(gw.chats()[1].body.messages), /not a valid JSON object/);
+  });
+});

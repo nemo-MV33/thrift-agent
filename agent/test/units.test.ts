@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { FileCache } from "../src/cache.js";
 import { compactHistory, dropFile } from "../src/context.js";
 import { verifyClaims, type Claim } from "../src/freshness.js";
 import { GatewayError } from "../src/gateway.js";
@@ -161,4 +163,12 @@ test("settled verdicts come from the cache on the next run, unknowns do not", as
     assert.equal(second.verdicts[0].status, "outdated");
     assert.equal(second.verdicts[1].status, "unknown");
   });
+});
+
+test("parallel cache writes all land", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "thrift-cache-"));
+  const cache = new FileCache(path.join(dir, "c.json"));
+  await Promise.all(Array.from({ length: 8 }, (_, i) => cache.set(`k${i}`, i)));
+  const fresh = new FileCache(path.join(dir, "c.json"));
+  for (let i = 0; i < 8; i++) assert.equal(await fresh.get(`k${i}`), i);
 });

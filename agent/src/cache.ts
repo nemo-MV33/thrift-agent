@@ -8,8 +8,11 @@ import path from "node:path";
 type Entry = { value: unknown; expires: number };
 
 export class FileCache {
-  private entries: Record<string, Entry> | null = null;
-  hits = 0;
+  // One shared load, so parallel callers all work on the same entries.
+  private loading: Promise<Record<string, Entry>> | null = null;
+  // Judges finish in parallel and each one stores its verdict. Writes go
+  // through this chain so two of them never share the temp file.
+  private writing: Promise<void> = Promise.resolve();
 
   constructor(readonly file: string, readonly ttlMs = 7 * 24 * 3600 * 1000) {}
 
@@ -17,20 +20,15 @@ export class FileCache {
     return createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 32);
   }
 
-  private async load(): Promise<Record<string, Entry>> {
-    if (this.entries) return this.entries;
-    try {
-      this.entries = JSON.parse(await fs.readFile(this.file, "utf8"));
-    } catch {
-      this.entries = {};
-    }
-    return this.entries!;
+  private load(): Promise<Record<string, Entry>> {
+    // A missing or broken file starts an empty cache.
+    this.loading ??= fs.readFile(this.file, "utf8").then((text) => JSON.parse(text)).catch(() => ({}));
+    return this.loading;
   }
 
   async get<T>(key: string): Promise<T | undefined> {
     const entry = (await this.load())[key];
     if (!entry || entry.expires < Date.now()) return undefined;
-    this.hits++;
     return entry.value as T;
   }
 
@@ -38,9 +36,14 @@ export class FileCache {
     const entries = await this.load();
     entries[key] = { value, expires: Date.now() + this.ttlMs };
     for (const [k, e] of Object.entries(entries)) if (e.expires < Date.now()) delete entries[k];
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(entries));
-    await fs.rename(tmp, this.file);
+    const write = this.writing.then(async () => {
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.${process.pid}.tmp`;
+      await fs.writeFile(tmp, JSON.stringify(entries));
+      await fs.rename(tmp, this.file);
+    });
+    // A failed write must not block the ones after it.
+    this.writing = write.catch(() => {});
+    await write;
   }
 }

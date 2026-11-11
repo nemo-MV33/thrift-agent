@@ -132,12 +132,10 @@ export async function checkFreshness(root: string, task: string, chat: Chat, cac
   };
 }
 
-/**
- * Searches each claim with Tavily and asks a model to judge it against the
- * excerpts. A verdict only counts when the judge copies a quote that really is
- * in an excerpt from the URL it names. Anything else stays unknown.
- */
-const verdictKey = (c: Claim) => FileCache.key("verdict", c.library.toLowerCase(), c.version, normalized(c.claim));
+// Verdicts are cached per claim and per search and judge settings, so a
+// change to either one is measured fresh instead of reusing old answers.
+const verdictKey = (c: Claim) =>
+  FileCache.key("verdict", searchSettings.name, searchSettings.judge, c.library.toLowerCase(), c.version, normalized(c.claim));
 
 /**
  * Searches each claim with Tavily and asks a model to judge it against the

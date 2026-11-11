@@ -196,8 +196,19 @@ function writesOf(toolName: string, input: any): { path: string; content: string
   return null;
 }
 
+// Tool arguments as an object, or null when the model sent something that is
+// not a JSON object (cut off at max_tokens, say).
+function parseArgs(call: ToolCall): Record<string, any> | null {
+  try {
+    const v = JSON.parse(call.function.arguments || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
-  const input = JSON.parse(call.function.arguments || "{}");
+  const input = parseArgs(call) ?? {};
   const writes = writesOf(toolName, input);
   if (writes) {
     const prefix = call.function.name.slice(0, -toolName.length);
@@ -401,10 +412,19 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
     console.log(`\n${r.message.content}`);
     break;
   }
+  // Set only when a write actually went through, so a rejected or broken
+  // write call does not trigger the automatic test run.
+  let editedNow = false;
   for (const call of calls) {
     const toolName = call.function.name.replace(/^[^-]+-/, "");
     console.log(gray(`  tool ${toolName} ${call.function.arguments}`));
     emit("tool", { step, tool: toolName, args: call.function.arguments.slice(0, 300) });
+    const input = parseArgs(call);
+    if (!input) {
+      // Tell the model instead of crashing; it usually resends the call whole.
+      messages.push({ role: "tool", tool_call_id: call.id, content: "error: the arguments were not a valid JSON object, nothing was run" });
+      continue;
+    }
     // A "no" ends the run. Otherwise models tend to retry the same change
     // through another tool, which defeats the point of asking.
     if (needsApproval(toolName) && !(await confirm(call, toolName))) {
@@ -415,9 +435,11 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
     const result = await execTool(call);
     messages.push(result);
     if (naive) continue;
-    const input = JSON.parse(call.function.arguments || "{}");
-    const writes = writesOf(toolName, input);
-    if (writes) wrote = true;
+    const writes = String(result.content ?? "").startsWith("error") ? null : writesOf(toolName, input);
+    if (writes) {
+      wrote = true;
+      editedNow = true;
+    }
     if (writes && !noContext && !noTrim) {
       // The model's own write call already carries the new version of these
       // files, so the old copies in the repo context are dead weight.
@@ -435,7 +457,6 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   if (finished || stopped) break;
   // After an edit the agent runs the tests itself instead of spending a
   // model round trip on "now run npm test".
-  const editedNow = calls.some((c) => /write_files?$/.test(c.function.name));
   const testedNow = calls.some((c) => c.function.name.endsWith("run_command"));
   if (!naive && !noAutotest && editedNow && !testedNow) {
     const prefix = calls[0].function.name.replace(/[^-]+$/, "");
