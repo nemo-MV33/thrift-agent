@@ -8,7 +8,8 @@
     "summarize": "tsx src/summarize.ts",
     "check": "tsx src/check.ts",
     "test": "node --import tsx --test test/*.test.ts",
-    "stale-eval": "tsx src/stale-eval.ts"
+    "stale-eval": "tsx src/stale-eval.ts",
+    "compare": "tsx src/compare-agents.ts"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
