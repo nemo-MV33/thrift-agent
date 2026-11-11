@@ -4,6 +4,7 @@
 // cost (as Bifrost computed it) and time.
 //
 //   npm run bench -- [--runs 3] [--only 07,08,09] [--modes naive,thrift]
+//   npm run bench -- --modes thrift,thrift-no-route,thrift-no-context,thrift-no-trim,thrift-no-autotest
 import { execFile, spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -51,6 +52,8 @@ function runAgent(prompt: string, mode: string, cacheKey: string): Promise<Agent
   if (mode === "naive") args.push("--naive");
   // "stale" is thrift with the freshness check off, to measure what Tavily adds.
   if (mode === "stale") args.push("--no-fresh");
+  // "thrift-no-route", "thrift-no-context" and so on switch off one technique.
+  if (mode.startsWith("thrift-no-")) args.push(`--no-${mode.slice("thrift-no-".length)}`);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: path.join(here, ".."),

@@ -53,6 +53,12 @@ if (isPrivate && !process.env.THRIFT_VK_PRIVATE) {
 if (marked) console.log("This repository is marked confidential. Every model call stays on local Ollama.");
 // Private repos never leave the machine, so no web lookups there either.
 const fresh = !naive && !isPrivate && !resumed && !args.includes("--no-fresh");
+// Ablation switches for the benchmark. Each one turns off a single technique
+// so its share of the savings can be measured.
+const noContext = !naive && args.includes("--no-context");
+const noTrim = !naive && args.includes("--no-trim");
+const noAutotest = !naive && args.includes("--no-autotest");
+const noRoute = !naive && !isPrivate && args.includes("--no-route");
 
 const vk = isPrivate
   ? process.env.THRIFT_VK_PRIVATE
@@ -119,7 +125,8 @@ const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 // how hard the task is. So the first request is routed on the task itself,
 // and later steps stay on whatever model it picked. The pinned header turns
 // the tier rules off for those requests (see bifrost/config.json).
-let pinned = resumed ? resumed.pinned && (!isPrivate || resumed.mode === "private") : false;
+// Without routing every request goes straight to the requested big model.
+let pinned = resumed ? resumed.pinned && (!isPrivate || resumed.mode === "private") : noRoute;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -212,7 +219,7 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
   return approved;
 }
 
-const SYSTEM = naive
+const SYSTEM = naive || noContext
   ? "You are a coding agent working inside a small repository. Use the tools to look at files, " +
     "make the change, then run the tests. Paths are relative to the repo root. Keep answers short."
   : gitFollowUp
@@ -263,7 +270,7 @@ const messages: Message[] = resumed ? resumed.messages : [
   { role: "system", content: SYSTEM },
   // Repo context and the task go in separate messages. Bifrost classifies
   // complexity from the latest user message only, so it sees just the task.
-  ...(naive ? [] : [{ role: "user", content: (await buildContext(workspace, task)) + (notes ? `\n\n${notes}` : "") }]),
+  ...(naive || noContext ? (notes ? [{ role: "user", content: notes }] : []) : [{ role: "user", content: (await buildContext(workspace, task)) + (notes ? `\n\n${notes}` : "") }]),
   { role: "user", content: task },
 ];
 
@@ -318,7 +325,7 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   let r: Awaited<ReturnType<typeof chat>>;
   const stepStart = Date.now();
   try {
-    r = await chat(naive ? messages : compactHistory(messages), step);
+    r = await chat(naive || noTrim ? messages : compactHistory(messages), step);
   } catch (e: any) {
     console.log(red(e.message));
     // Bifrost checks the virtual key's budget before it forwards a request,
@@ -390,6 +397,8 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
     const input = JSON.parse(call.function.arguments || "{}");
     if (toolName === "write_file" && typeof input.path === "string") {
       wrote = true;
+    }
+    if (toolName === "write_file" && typeof input.path === "string" && !noContext && !noTrim) {
       // The model's own write call already carries the new version of this
       // file, so the old copy in the repo context is dead weight.
       messages[1] = { ...messages[1], content: dropFile(String(messages[1].content), input.path) };
@@ -397,7 +406,7 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
     // Tests green after an edit means the job is done. Only the project's own
     // test script counts: "cat test.js" or "node -e ..." exiting 0 says nothing. Asking the model to
     // say so in a sentence would cost one more full round trip.
-    if (!gitFollowUp && toolName === "run_command" && wrote && isTestRun(input.command) && String(result.content).startsWith("exit 0")) {
+    if (!gitFollowUp && !noAutotest && toolName === "run_command" && wrote && isTestRun(input.command) && String(result.content).startsWith("exit 0")) {
       console.log("\ntests pass after the edit, done");
       finished = true;
       break;
@@ -408,7 +417,7 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   // model round trip on "now run npm test".
   const editedNow = calls.some((c) => c.function.name.endsWith("write_file"));
   const testedNow = calls.some((c) => c.function.name.endsWith("run_command"));
-  if (!naive && editedNow && !testedNow) {
+  if (!naive && !noAutotest && editedNow && !testedNow) {
     const prefix = calls[0].function.name.replace(/[^-]+$/, "");
     const call: ToolCall = {
       id: `auto-test-${step}`,
