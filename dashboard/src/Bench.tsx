@@ -24,7 +24,8 @@ function agg(rows: BenchRow[]): Agg | null {
 }
 
 function pickDefault(files: BenchFile[]) {
-  return files.find((file) => file.name === "paired-suite")
+  return files.find((file) => file.name === "current-suite")
+    ?? files.find((file) => file.name === "paired-suite")
     ?? [...files].sort((a, b) => b.rows - a.rows || Number(b.hasFreshness) - Number(a.hasFreshness) || b.mtime - a.mtime)[0];
 }
 

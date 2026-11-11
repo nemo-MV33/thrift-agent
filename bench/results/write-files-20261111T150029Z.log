@@ -1,0 +1,19 @@
+17 tasks x 1 modes x 1 runs -> bench/results/run-2026-11-11T15-00-30-224Z.jsonl
+01-cart-coupon               thrift #1 PASS tokens=1190 cost=0.00080 gemini/gemini-3.5-flash-lite
+02-paginate-offset           thrift #1 PASS tokens=1069 cost=0.00064 gemini/gemini-3.5-flash-lite
+03-config-log-level          thrift #1 PASS tokens=1113 cost=0.00032 groq/openai/gpt-oss-120b
+04-slugify-dashes            thrift #1 PASS tokens=1294 cost=0.00023 groq/openai/gpt-oss-20b
+05-rate-limit-window         thrift #1 PASS tokens=1242 cost=0.00038 groq/openai/gpt-oss-120b
+06-invoice-net-days          thrift #1 PASS tokens=1433 cost=0.00101 gemini/gemini-3.5-flash-lite
+07-csv-quoted-fields         thrift #1 PASS tokens=1605 cost=0.00056 groq/openai/gpt-oss-120b
+08-date-range-merge          thrift #1 PASS tokens=1693 cost=0.00055 groq/openai/gpt-oss-120b
+09-inventory-reserve         thrift #1 PASS tokens=1435 cost=0.00045 groq/openai/gpt-oss-120b
+10-duration-format           thrift #1 PASS tokens=1564 cost=0.00190 gemini/gemini-3.5-flash-lite
+11-emitter-once              thrift #1 PASS tokens=1494 cost=0.00123 gemini/gemini-3.5-flash-lite
+12-rename-user-name          thrift #1 PASS tokens=2179 cost=0.00071 groq/openai/gpt-oss-120b
+13-catalog-cache             thrift #1 PASS tokens=2636 cost=0.00103 groq/openai/gpt-oss-120b
+14-fetch-queue-order         thrift #1 PASS tokens=1639 cost=0.00111 gemini/gemini-3.5-flash-lite
+15-zod-signup-errors         thrift #1 PASS tokens=8659 cost=0.00263 groq/openai/gpt-oss-20b,gemini/gemini-3.5-flash-lite,groq/openai/gpt-oss-120b
+16-express-api-404           thrift #1 PASS tokens=6874 cost=0.00242 gemini/gemini-3.5-flash-lite,groq/openai/gpt-oss-120b
+17-express-files-path        thrift #1 PASS tokens=16428 cost=0.00640 groq/openai/gpt-oss-20b,gemini/gemini-3.5-flash-lite
+done -> bench/results/run-2026-11-11T15-00-30-224Z.jsonl

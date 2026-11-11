@@ -229,13 +229,27 @@ function summary(run: Run) {
 
 const rawBenchFile = /^run-[\w.-]+\.jsonl$/;
 
-function pairedBench() {
+// A suite is a manifest of result files, each optionally limited to some
+// modes. "current-suite" pairs the recorded naive runs with the latest Thrift
+// run; "paired-suite" is the first full comparison.
+const suites = [
+  { name: "current-suite", label: "Current benchmark" },
+  { name: "paired-suite", label: "First benchmark" },
+];
+
+function suiteBench(name: string) {
   try {
-    const manifest: unknown = JSON.parse(fs.readFileSync(path.join(benchDir, "paired-suite.json"), "utf8"));
-    if (!Array.isArray(manifest) || !manifest.length || !manifest.every((name) => typeof name === "string" && rawBenchFile.test(name))) return null;
-    const batches = [...new Set<string>(manifest)].map(readBench);
-    if (batches.some((batch) => !batch)) return null;
-    return { name: "paired-suite", rows: batches.flatMap((batch) => batch?.rows ?? []), summary: null };
+    const manifest: unknown = JSON.parse(fs.readFileSync(path.join(benchDir, `${name}.json`), "utf8"));
+    if (!Array.isArray(manifest) || !manifest.length) return null;
+    const entries = manifest.map((e) => (typeof e === "string" ? { file: e, modes: null } : e));
+    if (!entries.every((e) => typeof e?.file === "string" && rawBenchFile.test(e.file))) return null;
+    const rows: any[] = [];
+    for (const e of entries) {
+      const batch = readBench(e.file);
+      if (!batch) return null;
+      rows.push(...batch.rows.filter((row) => !Array.isArray(e.modes) || e.modes.includes(row.mode)));
+    }
+    return { name, rows, summary: null };
   } catch {
     return null;
   }
@@ -264,16 +278,17 @@ function listBench() {
       };
     })
     .sort((a, b) => b.mtime - a.mtime);
-  const paired = pairedBench();
-  if (!paired) return files;
-  return [{
-    name: paired.name, label: "Paired benchmark", rows: paired.rows.length,
-    mtime: 0, hasSummary: false, hasFreshness: false, hasCost: paired.rows.some((row) => row.cost != null),
-  }, ...files];
+  const listed = suites.flatMap((suite) => {
+    const data = suiteBench(suite.name);
+    return data
+      ? [{ name: suite.name, label: suite.label, rows: data.rows.length, mtime: 0, hasSummary: false, hasFreshness: false, hasCost: data.rows.some((row) => row.cost != null) }]
+      : [];
+  });
+  return [...listed, ...files];
 }
 
 function readBench(name: string): { name: string; rows: any[]; summary: unknown } | null {
-  if (name === "paired-suite") return pairedBench();
+  if (suites.some((suite) => suite.name === name)) return suiteBench(name);
   if (!rawBenchFile.test(name)) return null;
   const full = path.join(benchDir, name);
   if (!fs.existsSync(full)) return null;
