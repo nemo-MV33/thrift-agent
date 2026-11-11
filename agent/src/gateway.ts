@@ -53,3 +53,17 @@ export async function gatewayChat(headers: Record<string, string>, payload: Reco
     },
   };
 }
+
+/**
+ * A short JSON job on the small model: claim extraction and judging. MCP tools
+ * are switched off (the client name "none" matches nothing) and the tier
+ * rules are skipped, so these calls never pick up workspace tools or a bigger
+ * model. Temperature 0 keeps verdicts repeatable.
+ */
+export function smallModelChat(headers: Record<string, string>, messages: { role: string; content: string }[]) {
+  return gatewayChat(
+    headers,
+    { model: "groq/openai/gpt-oss-20b", messages, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"], temperature: 0 },
+    { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
+  );
+}

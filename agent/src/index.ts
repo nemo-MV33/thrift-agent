@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFreshness, freshnessNotes } from "./freshness.js";
 import { buildContext, compactHistory, dropFile, type Message, type ToolCall } from "./context.js";
-import { GATEWAY, GatewayError, gatewayChat } from "./gateway.js";
+import { GATEWAY, GatewayError, gatewayChat, smallModelChat } from "./gateway.js";
 import { markedPrivate, needsApproval, retryDelay } from "./policy.js";
 import { clearSession, loadSession, saveSession, type Session } from "./session.js";
 
@@ -229,12 +229,7 @@ let freshnessFailed = false;
 if (fresh) {
   // Claim extraction and judging are short JSON jobs, the small model is enough.
   freshness = await checkFreshness(workspace, task, async (msgs) => {
-    // The name "none" matches no MCP client. These calls only return JSON.
-    const r = await gatewayChat(
-      headers,
-      { model: "groq/openai/gpt-oss-20b", messages: msgs, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
-      { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
-    );
+    const r = await smallModelChat(headers, msgs);
     usage.push(r.record);
     const used = r.usage.total_tokens ?? 0;
     tokens += used;

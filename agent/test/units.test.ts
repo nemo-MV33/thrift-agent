@@ -108,11 +108,18 @@ test("a verdict counts only with a real quote from the cited page", async () => 
     }), "Check.");
     assert.equal(invented.verdicts[0].status, "unknown");
 
-    const wrongUrl = await verifyClaims([claim], async () => ({
-      content: JSON.stringify([{ index: 1, status: "current", source: "https://example.com", quote: "Use error.issues instead." }]),
+    const rewordedUrl = await verifyClaims([claim], async () => ({
+      content: JSON.stringify([{ index: 1, status: "outdated", source: "https://zod.dev/v4/changelog?ref=x", quote: "use ERROR.issues instead" }]),
       tokens: 50, requestId: null,
     }), "Check.");
-    assert.equal(wrongUrl.verdicts[0].status, "unknown");
+    assert.equal(rewordedUrl.verdicts[0].status, "outdated");
+    assert.equal(rewordedUrl.verdicts[0].source, page.url);
+
+    const tooShort = await verifyClaims([claim], async () => ({
+      content: JSON.stringify([{ index: 1, status: "outdated", source: page.url, quote: "Zod 4" }]),
+      tokens: 50, requestId: null,
+    }), "Check.");
+    assert.equal(tooShort.verdicts[0].status, "unknown");
   });
 });
 

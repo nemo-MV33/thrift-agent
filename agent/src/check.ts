@@ -7,7 +7,7 @@
 //   pbpaste | npm run check
 import { promises as fs } from "node:fs";
 import { parseClaims, verifyClaims, type Claim } from "./freshness.js";
-import { gatewayChat } from "./gateway.js";
+import { smallModelChat } from "./gateway.js";
 
 const args = process.argv.slice(2);
 const asJson = args.includes("--json");
@@ -32,12 +32,8 @@ if (!process.env.TAVILY_API_KEY) {
 const headers = { "Content-Type": "application/json", "x-bf-vk": process.env.THRIFT_VK_DEV ?? "" };
 let tokens = 0;
 const chat = async (messages: { role: string; content: string }[]) => {
-  // Same small model and fallback as the agent's own freshness check.
-  const r = await gatewayChat(
-    headers,
-    { model: "groq/openai/gpt-oss-20b", messages, tools: [], fallbacks: ["gemini/gemini-3.5-flash-lite"] },
-    { "x-thrift-pinned": "1", "x-bf-mcp-include-clients": "none" },
-  );
+  // Same small model and settings as the agent's own freshness check.
+  const r = await smallModelChat(headers, messages);
   const used = r.usage.total_tokens ?? 0;
   tokens += used;
   return { content: String(r.message.content ?? ""), tokens: used, requestId: r.requestId };
