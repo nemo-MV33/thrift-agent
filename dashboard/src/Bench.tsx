@@ -482,7 +482,8 @@ function AgentsPanel({ rows }: { rows: BenchRow[] }) {
           </div>
         ))}
         <p className="agent-key muted">
-          <i className="agent-fresh" /> processed fresh <i className="agent-cached" /> read from the provider's prompt cache
+          <span><i className="agent-fresh" /> processed fresh</span>
+          <span><i className="agent-cached" /> read from the provider's prompt cache</span>
         </p>
       </div>
     </section>

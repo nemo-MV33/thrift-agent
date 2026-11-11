@@ -706,9 +706,9 @@ a { color: inherit; text-decoration-thickness: 1.5px; text-underline-offset: 3px
 :root[data-theme='dark'] .agent-cached { background: #4d4d4d; }
 .agent-num { font-family: var(--mono); font-size: 13px; font-weight: 700; text-align: right; }
 .agent-foot { grid-column: 2 / 4; font-family: var(--mono); font-size: 11.5px; }
-.agent-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 11.5px; margin: 2px 0 0; }
+.agent-key { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 11.5px; margin: 2px 0 0; }
+.agent-key span { display: inline-flex; align-items: center; gap: 6px; }
 .agent-key i { display: inline-block; width: 14px; height: 10px; border: 1.5px solid var(--edge); border-radius: 3px; }
-.agent-key i + * { margin-right: 8px; }
 @media (max-width: 640px) {
   .agent-row { grid-template-columns: minmax(0, 1fr) auto; }
   .agent-name { grid-column: 1 / 3; }

@@ -66,6 +66,8 @@ We also ran the two agents most people use on the same 17 tasks with `npm run co
 | Codex | 17/17 | 91,290 | 77,327 | 13,963 |
 | Thrift | 17/17 | 3,150 | 0 | 3,150 |
 
+<img src="docs/demo/agents.png" alt="Average tokens per task for Claude Code, Codex, the naive baseline and Thrift, split into fresh and cached input" width="900" />
+
 All three solved every task. Most of what the other two read is their own system prompt and tool definitions, which the provider caches and bills at a discount. So the fairer line is uncached tokens (new input, cache writes and output): Claude Code used 6.4 times as many as Thrift and Codex 4.4 times as many. Thrift was lower than Claude Code on all 17 tasks and lower than Codex on 16. Asked only to reply "ok", Claude Code still wrote about 39,000 tokens of setup into the cache.
 
 The models differ, so this compares the agents as you would use them, not the models behind them. One run per task. Raw runs: [Claude Code](bench/results/run-2026-11-11T16-08-13-430Z.jsonl), [Codex](bench/results/run-2026-11-11T15-05-14-608Z.jsonl).
