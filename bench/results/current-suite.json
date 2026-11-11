@@ -3,5 +3,7 @@
   { "file": "run-2026-11-09T15-07-00-878Z.jsonl", "modes": ["naive"] },
   { "file": "run-2026-11-09T15-28-44-567Z.jsonl", "modes": ["naive"] },
   { "file": "run-2026-11-09T15-38-08-261Z.jsonl", "modes": ["naive"] },
-  { "file": "run-2026-11-11T15-00-30-224Z.jsonl", "modes": ["thrift"] }
+  { "file": "run-2026-11-11T15-00-30-224Z.jsonl", "modes": ["thrift"] },
+  { "file": "run-2026-11-11T15-05-14-608Z.jsonl", "modes": ["codex"] },
+  { "file": "run-2026-11-11T16-08-13-430Z.jsonl", "modes": ["claude-code"] }
 ]

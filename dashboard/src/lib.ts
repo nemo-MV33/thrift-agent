@@ -64,6 +64,8 @@ export type BenchRow = {
   crashed?: boolean;
   error?: string | null;
   freshness?: unknown;
+  // Other agents report their own usage; cached is what came from the prompt cache.
+  usage?: { input: number; cached: number; cacheWrite?: number; output: number };
 };
 
 export type BenchFile = {

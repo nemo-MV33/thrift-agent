@@ -64,7 +64,7 @@ export function BenchPage() {
           <span className="eyebrow-label">{label}</span>
           <h1 className="display">Benchmark</h1>
           <p className="page-sub">
-            Small Node repos with failing tests. Naive sends the full history to one model. Thrift routes once per task and keeps context short. Stale runs Thrift with the Tavily check off.
+            Small Node repos with failing tests, judged by the original tests. Naive sends the full history to one model. Thrift routes once per task and keeps context short. Claude Code and Codex ran the same tasks.
           </p>
         </div>
         <label className="select">
@@ -106,6 +106,7 @@ function BenchBody({ rows: all }: { rows: BenchRow[] }) {
   return (
     <>
       {headline && <Headline naive={naive} thrift={thrift} taskCount={shared.size} />}
+      <AgentsPanel rows={rows} />
       {fresh.length > 0 && <FreshSection rows={fresh} />}
       <div className={headline ? "bench-grid" : undefined}>
         <section className="panel">
@@ -429,6 +430,60 @@ function StaleClaims() {
             })}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+const AGENTS: { mode: string; label: string }[] = [
+  { mode: "claude-code", label: "Claude Code" },
+  { mode: "codex", label: "Codex" },
+  { mode: "naive", label: "Naive baseline" },
+  { mode: "thrift", label: "Thrift" },
+];
+
+// Average tokens per task for each agent, split into what the provider served
+// from its prompt cache and what it processed fresh. Thrift and the baseline
+// have no prompt cache, so all of theirs is fresh.
+function AgentsPanel({ rows }: { rows: BenchRow[] }) {
+  const tasks = new Set(rows.filter((r) => r.mode === "thrift").map((r) => r.task));
+  const stats = AGENTS.flatMap(({ mode, label }) => {
+    const own = rows.filter((r) => r.mode === mode && tasks.has(r.task) && !r.crashed);
+    if (!own.length) return [];
+    const byTask = [...tasks].map((task) => own.filter((r) => r.task === task)).filter((list) => list.length);
+    const perTask = (f: (r: BenchRow) => number) => avgKnown(byTask.map((list) => avgKnown(list.map(f)))) ?? 0;
+    const total = perTask((r) => r.tokens ?? 0);
+    const cached = perTask((r) => r.usage?.cached ?? 0);
+    const pass = own.filter((r) => r.pass).length;
+    return [{ mode, label, total, cached, fresh: total - cached, pass, runs: own.length }];
+  });
+  if (stats.length < 3) return null;
+  const thrift = stats.find((s) => s.mode === "thrift")!;
+  const max = Math.max(...stats.map((s) => s.total));
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Against other agents</h2>
+        <span className="muted">avg tokens per task, {tasks.size} tasks</span>
+      </header>
+      <div className="agents">
+        {stats.map((s) => (
+          <div key={s.mode} className={s.mode === "thrift" ? "agent-row is-thrift" : "agent-row"}>
+            <span className="agent-name">{s.label}</span>
+            <div className="agent-track" aria-label={`${s.label}: ${fmtInt(s.total)} tokens, ${fmtInt(s.cached)} from cache`}>
+              <span className="agent-fresh" style={{ width: `${(s.fresh / max) * 100}%` }} />
+              {s.cached > 0 && <span className="agent-cached" style={{ width: `${(s.cached / max) * 100}%` }} />}
+            </div>
+            <span className="agent-num">{fmtInt(s.total)}</span>
+            <span className="agent-foot muted">
+              {s.pass}/{s.runs} passed, {fmtInt(s.fresh)} uncached
+              {s.mode !== "thrift" && thrift.fresh > 0 && <> · {(s.fresh / thrift.fresh).toFixed(1)}x Thrift</>}
+            </span>
+          </div>
+        ))}
+        <p className="agent-key muted">
+          <i className="agent-fresh" /> processed fresh <i className="agent-cached" /> read from the provider's prompt cache
+        </p>
       </div>
     </section>
   );
