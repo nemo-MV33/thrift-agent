@@ -20,6 +20,7 @@
 
 <p align="center">
   <a href="#results">Results</a> ·
+  <a href="#the-four-hard-requirements">Requirements</a> ·
   <a href="#how-it-saves-tokens">How it works</a> ·
   <a href="#what-bifrost-does">Bifrost</a> ·
   <a href="#what-tavily-does">Tavily</a> ·
@@ -29,7 +30,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo/benchmark-shared.png" alt="Benchmark dashboard comparing naive and thrift on 16 shared tasks" width="900" />
+  <img src="docs/demo/benchmark-shared.png" alt="Benchmark dashboard comparing naive and thrift on 17 shared tasks" width="900" />
 </p>
 
 ## Results
@@ -41,7 +42,7 @@ On 17 shared tasks, Thrift used **68% fewer tokens per run**. Naive passed 24/24
 | naive | 24/24 | 11,126 | $0.00176 | 29.9 s |
 | thrift | 31/31 | 3,579 | $0.00064 | 22.2 s |
 
-The comparison pools the November 7 runs on tasks 01-06 and the November 9 runs on tasks 05-17. It reports means per valid run, so earlier tasks with more repeats carry more weight. The benchmark excludes 8 attempts stopped by provider errors and omits 4 missing gateway costs from the cost averages. The earlier fallback and freshness experiments are recorded separately in the [journal](docs/journal.md). Thrift used more tokens on tasks 16 and 17. Both involved the freshness check, and task 17 also used more coding tokens.
+The comparison pools the November 7 runs on tasks 01-06 and the November 9 runs on tasks 05-17. It reports means per valid run, so earlier tasks with more repeats carry more weight. Tasks 07-17 have one run per mode. If you average each task first and then average the 17 task means, naive comes to 10,878 tokens and Thrift to 4,931, which is 55% fewer. Thrift used fewer tokens on 15 of the 17 tasks. The benchmark excludes 8 attempts stopped by provider errors and omits 4 missing gateway costs from the cost averages. The earlier fallback and freshness experiments are recorded separately in the [journal](docs/journal.md). Thrift used more tokens on tasks 16 and 17. Both involved the freshness check, and task 17 also used more coding tokens.
 
 ### By difficulty
 
@@ -61,6 +62,17 @@ npm run summarize -- \
   ../bench/results/run-2026-11-09T15-28-44-567Z.jsonl \
   ../bench/results/run-2026-11-09T15-38-08-261Z.jsonl
 ```
+
+## The four hard requirements
+
+The problem statement lists four mandatory behaviors. This is where each one lives and how we tested it.
+
+| Requirement | How Thrift does it | Evidence |
+|---|---|---|
+| Keep working through outages and rate limits, and tell the user | Every request carries a fallback chain (Groq, then Gemini, then local Ollama). When a fallback answers, the CLI prints which model took over and the run goes on with that model. | Fallback scene: Groq failed on step 1, Gemini finished the fix |
+| Enforce individual spending limits before model calls | Each user gets a Bifrost virtual key with its own budget. Bifrost checks the budget before it forwards a request. On HTTP 402 the agent stops and says why. | Budget scene: step 2 got 402 and nothing else was sent |
+| Confidential repos only go to local models | A repo marked with a `.thrift-private` file, or `"thrift": { "private": true }` in its `package.json`, always runs through the `thrift-private` key, which can only reach Ollama. The Tavily check is skipped. The marker is read from disk, so the task text cannot switch it off, and the baseline agent refuses to run on such a repo. | Private scene, plus a run whose task said to ignore privacy settings. Every step still went to qwen2.5-coder:7b |
+| Reads are free, writes, shell and Git need approval | `list_files` and `read_file` run without asking. Every other tool call waits for a yes in the terminal, with a diff for file writes. The check happens in the CLI after the model answers, so a prompt cannot skip it. A "no" ends the run. | Approval scene: the denied `git push` never ran |
 
 ## Why
 
@@ -105,6 +117,19 @@ Before the first coding step, Thrift:
 
 Repos without dependencies skip the check and pay nothing. Private mode skips it too, so the task never leaves the machine.
 
+### Checking any answer
+
+The same verification step works on its own. Give it an answer that any LLM wrote and it pulls out the claims that can go stale (prices, versions and API behavior, laws, company leadership), searches each one with Tavily, and scores it. The claim extraction and the judge both run through Bifrost on the small model.
+
+```bash
+cd agent
+set -a; . ../.env; set +a
+npm run check -- answer.txt          # or: pbpaste | npm run check
+npm run check -- answer.txt --json   # verdicts, sources, token count
+```
+
+On a sample answer that recommended Zod 3, the old Express wildcard, Node.js 18 as the current LTS and an old GPT-4 Turbo price, it marked Zod 3 as outdated with a link to the Zod releases page and found a source for the price. Node.js 18 and Express stayed unknown because the excerpts it got back had no quote that settled them. A verdict only counts when the judge quotes an excerpt from the URL it cites, so a weak search gives "unknown", not a guess.
+
 ### Freshness results
 
 The November 9 rerun used the stricter evidence check on tasks 15-17. Both modes passed 9/9. Stale is Thrift with freshness disabled.
@@ -142,7 +167,6 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
 
 The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
 
-The [submission notes](docs/submission.md) cover the presentation and the [demo script](docs/demo/script.md) describes the recording.
 
 ## Architecture
 
@@ -163,6 +187,8 @@ flowchart LR
 | Agent | `agent/src/index.ts` | Loop, routing pin, approval prompts, auto test run, events |
 | Context | `agent/src/context.ts` | File ranking, repo context, history trimming |
 | Freshness check | `agent/src/freshness.ts` | Claim extraction, Tavily lookup, scoring |
+| Answer checker | `agent/src/check.ts` | Runs the same check on any LLM answer from a file or stdin |
+| Gateway client | `agent/src/gateway.ts` | One chat call through Bifrost, with routing and usage headers |
 | Workspace tools | `agent/src/workspace-server.ts` | Stdio MCP server with read, write, list and run |
 | Benchmark | `agent/src/bench.ts`, `agent/src/summarize.ts`, `bench/` | Runner, summary, 17 tasks with reference solutions |
 | Gateway config | `bifrost/config.template.json`, `scripts/gateway.sh` | Providers, keys, budgets, routing rules, cache, MCP |
@@ -211,7 +237,7 @@ set -a; . ../.env; set +a
 npm start -- "Prices come out wrong when a percent coupon is applied at checkout. Fix it."
 ```
 
-Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check.
+Flags: `--private` keeps everything on Ollama, `--naive` runs the baseline agent, `--yes` approves every action, `--no-fresh` turns off the Tavily check. To mark a repo as confidential for good, add an empty `.thrift-private` file to it. Thrift then uses private mode whether or not you pass the flag.
 
 To work on another checkout, set `THRIFT_WORKSPACE` in `.env` to its path. Relative paths start from the Thrift repo root. Restart the gateway with `scripts/gateway.sh --fresh` after changing workspaces. This resets the local Bifrost databases. Use the default workspace for the benchmark.
 

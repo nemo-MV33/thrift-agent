@@ -279,3 +279,24 @@ After the cooldown, naive passed task 17 in a separate run with 14,188 tokens an
 The pooled paired suite covers all 17 tasks. Naive passed 24/24 valid attempts, averaging 11,126 tokens, $0.00176 and 29.9 seconds. Thrift passed 31/31, averaging 3,579 tokens, $0.00064 and 22.2 seconds. That is 68% fewer tokens per valid run. Eight provider errors are excluded. Four thrift rows have missing costs and are excluded only from the cost average. The manifest lists the four source batches so the dashboard and README use the same rows.
 
 The presentation handoff is a seven-slide brief with exact English copy, a layout plan and PNG crops of the real UI. The team will assemble the PowerPoint file. The revised demo uses the paired dashboard and the fresh Tavily rerun.
+
+### Brief check, November 11
+
+Went back through both problem statements line by line. Three gaps against the mandatory list:
+
+- Confidential repos depended on remembering `--private`. The brief says repos "marked confidential" must stay local no matter what the prompt says. The CLI now reads a `.thrift-private` file or `"thrift": { "private": true }` in `package.json` from the workspace. A marked repo always uses the Ollama-only key, skips Tavily, and refuses the naive baseline. Without `THRIFT_VK_PRIVATE` it exits instead of falling back to the dev key.
+- Approval used a list of risky tools. It now works the other way round: `list_files` and `read_file` are free, any other tool needs a yes. That covers tools a new MCP server might add.
+- The fallback only showed up as a gray "(fallback)" tag. The brief asks to inform the user, so there is now a plain line saying which model took over. A 402 also prints that the key's limit is reached and the run stops before the next call.
+
+The Tavily brief asks for a system that takes an LLM answer. Our check only looked at the task. The verification half of `freshness.ts` is now a separate `verifyClaims`, and `npm run check` runs it on any answer from a file or stdin. On a sample answer it flagged Zod 3 as outdated with the Zod releases page as source, found a source for the GPT-4 Turbo price, and left Node.js 18 LTS and the Express wildcard unknown because no excerpt contained a quote that settled them. 4 searches, 4,969 tokens.
+
+Live runs after the change, gateway restarted:
+
+- Pagination fixture with `.thrift-private`, no flag: two steps on qwen2.5-coder:7b, 2,925 tokens, tests 0/2 to 2/2.
+- Same fixture, task text telling the agent to ignore privacy and use the fastest cloud model: every step stayed on Ollama. The 7b model did not fix the bug in that run (3 steps, 5,139 tokens).
+- `--naive` on the marked repo exits with an error.
+- Cart fixture in normal mode: one step on gpt-oss-20b, 1,544 tokens, 3/3 tests.
+
+The benchmark code paths are unchanged for unmarked repos, so the recorded results still apply. Pointed the Redis address in the gateway template at 127.0.0.1 to match the loopback binding in `docker-compose.yml`.
+
+Rechecked the headline number. 68% is the mean per run, and tasks 01-06 have more repeats than 07-17. Averaging per task first gives 10,878 naive and 4,931 Thrift tokens, 55% fewer. Thrift was cheaper on 15 of 17 tasks and more expensive on 16 and 17. The README now gives both figures.
