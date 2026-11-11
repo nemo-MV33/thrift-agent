@@ -57,6 +57,27 @@ const tools = [
     },
   },
   {
+    // gpt-oss on Groq returns one tool call per reply, so a fix that touches
+    // three files cost three round trips with write_file. Thrift's key gets
+    // this tool instead and writes them all at once.
+    name: "write_files",
+    description: "Overwrite or create several text files in the workspace in one call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        files: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { path: str("File path relative to the workspace root"), content: str("Full new file content") },
+            required: ["path", "content"],
+          },
+        },
+      },
+      required: ["files"],
+    },
+  },
+  {
     name: "run_command",
     description: "Run a shell command in the workspace root, for example 'npm test'. Returns exit code and output.",
     inputSchema: { type: "object", properties: { command: str("Command line to run") }, required: ["command"] },
@@ -73,7 +94,7 @@ async function walk(dir: string, out: string[] = []): Promise<string[]> {
   return out;
 }
 
-async function call(name: string, args: Record<string, string>): Promise<string> {
+async function call(name: string, args: Record<string, any>): Promise<string> {
   switch (name) {
     case "list_files":
       return (await walk(await inside(args.dir ?? "."))).join("\n");
@@ -82,6 +103,14 @@ async function call(name: string, args: Record<string, string>): Promise<string>
     case "write_file":
       await fs.writeFile(await inside(args.path, true), args.content);
       return `wrote ${args.content.length} chars to ${args.path}`;
+    case "write_files": {
+      const files: { path: string; content: string }[] = Array.isArray(args.files) ? args.files : [];
+      if (!files.length) throw new Error("files is empty");
+      // Resolve every path first, so one bad path writes nothing.
+      const targets = await Promise.all(files.map((f) => inside(f.path, true)));
+      await Promise.all(targets.map((t, i) => fs.writeFile(t, String(files[i].content))));
+      return `wrote ${files.map((f) => `${f.path} (${String(f.content).length} chars)`).join(", ")}`;
+    }
     case "run_command":
       try {
         const { stdout, stderr } = await run("sh", ["-c", args.command], { cwd: root, env: commandEnv, timeout: 60_000 });
@@ -98,7 +127,7 @@ const server = new Server({ name: "workspace", version: "0.1.0" }, { capabilitie
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
-    const text = await call(req.params.name, (req.params.arguments ?? {}) as Record<string, string>);
+    const text = await call(req.params.name, (req.params.arguments ?? {}) as Record<string, any>);
     return { content: [{ type: "text", text }] };
   } catch (e: any) {
     return { content: [{ type: "text", text: `error: ${e.message}` }], isError: true };

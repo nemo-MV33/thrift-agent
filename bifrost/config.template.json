@@ -144,7 +144,10 @@
           {
             "mcp_client_name": "ws",
             "tools_to_execute": [
-              "*"
+              "list_files",
+              "read_file",
+              "write_files",
+              "run_command"
             ]
           }
         ]
@@ -170,7 +173,10 @@
           {
             "mcp_client_name": "ws",
             "tools_to_execute": [
-              "*"
+              "list_files",
+              "read_file",
+              "write_file",
+              "run_command"
             ]
           }
         ]
@@ -196,7 +202,10 @@
           {
             "mcp_client_name": "ws",
             "tools_to_execute": [
-              "*"
+              "list_files",
+              "read_file",
+              "write_file",
+              "run_command"
             ]
           }
         ]

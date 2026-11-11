@@ -125,3 +125,19 @@ test("unknown tools need approval too", async () => {
     assert.equal(gw.tools().length, 0);
   });
 });
+
+test("write_files shows a diff for every file and asks once", async () => {
+  const files = [{ path: "src/cart.js", content: "export const x = 2;\n" }, { path: "src/tax.js", content: "export const rate = 0.2;\n" }];
+  const call = { role: "assistant", content: null, tool_calls: [{ id: "w1", type: "function", function: { name: "ws-write_files", arguments: JSON.stringify({ files }) } }] };
+  const gw = new MockGateway([{ message: call }], passingTests);
+  await withGateway(gw, async () => {
+    const dir = await repo();
+    const { out } = await runCli(["fix it", "--no-fresh"], { BIFROST_URL: gw.url, THRIFT_WORKSPACE: dir, THRIFT_SESSION_FILE: path.join(dir, "s.json") }, "y\ny\n");
+    assert.match(out, /write src\/cart\.js/);
+    assert.match(out, /write src\/tax\.js/);
+    assert.match(out, /tests pass after the edit, done/);
+    assert.equal(gw.chats().length, 1);
+    assert.deepEqual(gw.tools().map((r) => r.body.function.name), ["ws-read_file", "ws-read_file", "ws-write_files", "ws-run_command"]);
+    assert.match(gw.chats()[0].body.messages[0].content, /single write_files call/);
+  });
+});

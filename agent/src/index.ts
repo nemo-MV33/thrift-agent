@@ -187,24 +187,36 @@ function diff(before: string, after: string): string {
   return out.join("\n");
 }
 
+// The files a write_file or write_files call would change, or null for any
+// other tool.
+function writesOf(toolName: string, input: any): { path: string; content: string }[] | null {
+  if (toolName === "write_file") return [{ path: String(input.path), content: String(input.content ?? "") }];
+  if (toolName === "write_files" && Array.isArray(input.files))
+    return input.files.map((f: any) => ({ path: String(f?.path), content: String(f?.content ?? "") }));
+  return null;
+}
+
 async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
   const input = JSON.parse(call.function.arguments || "{}");
-  if (toolName === "write_file") {
+  const writes = writesOf(toolName, input);
+  if (writes) {
     const prefix = call.function.name.slice(0, -toolName.length);
-    const current = await execTool({
-      id: `${call.id}-preview`,
-      type: "function",
-      function: { name: `${prefix}read_file`, arguments: JSON.stringify({ path: input.path }) },
-    });
-    const before = String(current.content ?? "").startsWith("error") ? "" : String(current.content);
-    console.log(`\nwrite ${input.path}\n${diff(before, input.content)}`);
+    for (const [i, w] of writes.entries()) {
+      const current = await execTool({
+        id: `${call.id}-preview-${i}`,
+        type: "function",
+        function: { name: `${prefix}read_file`, arguments: JSON.stringify({ path: w.path }) },
+      });
+      const before = String(current.content ?? "").startsWith("error") ? "" : String(current.content);
+      console.log(`\nwrite ${w.path}\n${diff(before, w.content)}`);
+    }
   } else if (toolName === "run_command") {
     console.log(`\nrun: ${input.command}`);
   } else {
     console.log(`\n${toolName} ${call.function.arguments}`);
   }
   const detail =
-    toolName === "write_file" ? { path: input.path }
+    writes ? { path: writes.map((w) => w.path).join(", ") }
     : toolName === "run_command" ? { command: input.command }
     : { command: `${toolName} ${call.function.arguments.slice(0, 200)}` };
   if (autoYes) {
@@ -219,14 +231,23 @@ async function confirm(call: ToolCall, toolName: string): Promise<boolean> {
   return approved;
 }
 
+// Thrift's key offers write_files, which takes every changed file in one call.
+// The private key keeps write_file, which small local models handle better.
+const writeHow = isPrivate
+  ? "one write_file call per file, all at once, each with the full new content"
+  : "a single write_files call with the full new content of every file you change";
 const SYSTEM = naive || noContext
   ? "You are a coding agent working inside a small repository. Use the tools to look at files, " +
     "make the change, then run the tests. Paths are relative to the repo root. Keep answers short."
   : gitFollowUp
-    ? "Coding agent. Use the supplied files first. Edit and test when the task asks for a code change. " +
-      "Complete the requested Git actions before replying. Paths are relative to the repo root. Keep answers short."
-    : "Coding agent. The relevant files are already below, don't read them again. " +
-      "Write the fix, run the tests once, reply in one line. Paths are relative to the repo root.";
+    ? `Coding agent. The relevant files are below, don't read them again. Make every code change in one reply: ${writeHow}. ` +
+      "The agent runs npm test after the edits. Then do the requested Git actions. Paths are relative to the repo root. Keep answers short."
+    // Measured on task 12: the old prompt ("write the fix, run the tests
+    // once") made the model run the failing tests first and then edit one
+    // file per step, resending the whole context every time.
+    : `Coding agent. The relevant files are below, don't read them again. Make every change the task needs in one reply: ${writeHow}. ` +
+      "Don't run the tests. The agent runs npm test after your edits and only comes back to you if they fail, " +
+      "so then fix what the output points to. Paths are relative to the repo root.";
 
 emit("run_start", { task, workspace: path.basename(workspace), resumed: Boolean(resumed) });
 let tokens = resumed?.tokens ?? 0;
@@ -395,13 +416,12 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
     messages.push(result);
     if (naive) continue;
     const input = JSON.parse(call.function.arguments || "{}");
-    if (toolName === "write_file" && typeof input.path === "string") {
-      wrote = true;
-    }
-    if (toolName === "write_file" && typeof input.path === "string" && !noContext && !noTrim) {
-      // The model's own write call already carries the new version of this
-      // file, so the old copy in the repo context is dead weight.
-      messages[1] = { ...messages[1], content: dropFile(String(messages[1].content), input.path) };
+    const writes = writesOf(toolName, input);
+    if (writes) wrote = true;
+    if (writes && !noContext && !noTrim) {
+      // The model's own write call already carries the new version of these
+      // files, so the old copies in the repo context are dead weight.
+      for (const w of writes) messages[1] = { ...messages[1], content: dropFile(String(messages[1].content), w.path) };
     }
     // Tests green after an edit means the job is done. Only the project's own
     // test script counts: "cat test.js" or "node -e ..." exiting 0 says nothing. Asking the model to
@@ -415,7 +435,7 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   if (finished || stopped) break;
   // After an edit the agent runs the tests itself instead of spending a
   // model round trip on "now run npm test".
-  const editedNow = calls.some((c) => c.function.name.endsWith("write_file"));
+  const editedNow = calls.some((c) => /write_files?$/.test(c.function.name));
   const testedNow = calls.some((c) => c.function.name.endsWith("run_command"));
   if (!naive && !noAutotest && editedNow && !testedNow) {
     const prefix = calls[0].function.name.replace(/[^-]+$/, "");
