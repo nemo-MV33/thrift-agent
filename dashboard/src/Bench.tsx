@@ -55,7 +55,8 @@ export function BenchPage() {
   if (failed) return <Empty title="Event server is not reachable" body="Benchmark files are served by the dashboard server. Start it with npm run dev." />;
   if (files && files.length === 0) return <Empty title="No benchmark results yet" body="Run the benchmark and its results file will appear here." command="cd agent && npm run bench -- --runs 3" />;
   const modes = new Set(rows?.filter((r) => !providerFailure(r)).map((r) => r.mode));
-  const label = modes.has("stale") ? "Stale vs thrift" : modes.has("naive") ? "Naive vs thrift" : "Thrift runs";
+  const others = modes.has("claude-code") || modes.has("codex");
+  const label = modes.has("stale") ? "Stale vs thrift" : others ? "Four agents, same tests" : modes.has("naive") ? "Naive vs thrift" : "Thrift runs";
 
   return (
     <div className="bench">

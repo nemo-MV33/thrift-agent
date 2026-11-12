@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { Store } from "./App";
 import { Ev, FeedItem, Gateway, RunSummary, fmtAgo, fmtCost, fmtInt, fmtMs, shortModel, useNow } from "./lib";
 
+// Task prompts often quote identifiers in backticks. Show those as code.
+function TaskText({ text }: { text: string }) {
+  return <>{text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))}</>;
+}
+
 type ToolCall = { tool: string; args: string; auto?: boolean; ok?: boolean; at: number };
 type Approval = { tool: string; target: string; state: "waiting" | "approved" | "rejected" | "auto"; at: number };
 
@@ -76,7 +81,8 @@ function buildRun(events: Ev[]): RunView {
   let last: StepView | null = null;
   let firstModel: string | null = null;
 
-  for (const e of events) {
+  // Older agents posted events without waiting, so they can arrive out of order.
+  for (const e of [...events].sort((a, b) => a.at - b.at)) {
     view.lastAt = Math.max(view.lastAt, e.at);
     switch (e.type) {
       case "run_start":
@@ -142,6 +148,7 @@ function buildRun(events: Ev[]): RunView {
         const pending = last?.approvals.find((a) => a.state === "waiting" && a.tool === e.tool && a.target === target(e));
         if (pending) pending.state = state;
         else last?.approvals.push({ tool: String(e.tool), target: target(e), state, at: e.at });
+        if (state === "rejected") view.stoppedReason = `Declined in the terminal: ${target(e)}`;
         break;
       }
       case "error":
@@ -224,7 +231,7 @@ function RunDetail({ run, following, onFollow }: { run: RunView; following: bool
               </button>
             )}
           </div>
-          <h1 className="display">{run.task || "Untitled task"}</h1>
+          <h1 className="display">{run.task ? <TaskText text={run.task} /> : "Untitled task"}</h1>
         </div>
         <dl className="totals">
           <Stat label="Tokens" value={fmtInt(run.tokens)} />
@@ -444,10 +451,10 @@ function RunPicker(props: { runs: RunSummary[]; active: string | null; following
           {props.runs.map((r) => (
             <li key={r.runId}>
               <button className={r.runId === props.active ? "run-item on" : "run-item"} onClick={() => props.onPick(r.runId)}>
-                <span className="run-item-task">{r.task || r.runId}</span>
+                <span className="run-item-task">{r.task ? <TaskText text={r.task} /> : r.runId}</span>
                 <span className="run-item-meta">
                   {r.mode && <span className={`mode mode-${r.mode} small`}>{r.mode}</span>}
-                  <span className={r.error ? "neg" : r.ended ? "muted" : "live-text"}>{r.error ? "stopped" : r.ended ? "done" : "live"}</span>
+                  <span className={r.error || r.stopped ? "neg" : r.ended ? "muted" : "live-text"}>{r.error || r.stopped ? "stopped" : r.ended ? "done" : "live"}</span>
                   <span className="muted">{fmtAgo(r.updatedAt, now)}</span>
                 </span>
               </button>

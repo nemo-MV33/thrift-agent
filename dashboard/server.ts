@@ -170,6 +170,14 @@ function markMissing(ev: Ev, reason: string) {
   broadcast("enrich", { runId: ev.runId, requestId: ev.requestId, missing: reason });
 }
 
+// On a fallback the request id belongs to the failed first attempt. The
+// attempt that answered is logged as its child, so prefer the last child.
+function findHit(logs: LogEntry[], id: string): LogEntry | undefined {
+  const children = logs.filter((l) => String(l.parent_request_id ?? "") === id);
+  if (children.length) return children.reduce((a, b) => ((num(b.fallback_index) ?? 0) > (num(a.fallback_index) ?? 0) ? b : a));
+  return logs.find((l) => String(l.id) === id);
+}
+
 // Logs are written asynchronously by the gateway, so retry a few times.
 async function enrich(ev: Ev) {
   const id = str(ev.requestId);
@@ -180,7 +188,7 @@ async function enrich(ev: Ev) {
     const logs = await fetchLogs(100);
     if (!logs) continue;
     reached = true;
-    const hit = logs.find((l) => l.id === id);
+    const hit = findHit(logs, id);
     if (hit) return applyHit(ev, hit);
   }
   markMissing(ev, reached ? "not found" : "gateway offline");
@@ -200,9 +208,8 @@ async function backfill(run: Run) {
     for (const ev of steps) markMissing(ev, "gateway offline");
     return;
   }
-  const byId = new Map(logs.map((l) => [String(l.id), l]));
   for (const ev of steps) {
-    const hit = byId.get(String(ev.requestId));
+    const hit = findHit(logs, String(ev.requestId));
     if (hit) applyHit(ev, hit);
     else markMissing(ev, "not found");
   }
@@ -221,6 +228,7 @@ function summary(run: Run) {
     updatedAt: run.updatedAt,
     ended: Boolean(end),
     error: Boolean(end?.error) || run.events.some((e) => e.type === "error"),
+    stopped: Boolean(end?.stopped),
     tokens: (end?.tokens as number) ?? null,
   };
 }

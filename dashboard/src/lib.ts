@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type Mode = "thrift" | "naive" | "private" | "stale";
+export type Mode = "thrift" | "naive" | "private" | "stale" | "claude-code" | "codex";
 
 export type Gateway = {
   cost: number | null;
@@ -30,6 +30,7 @@ export type RunSummary = {
   updatedAt: number;
   ended: boolean;
   error: boolean;
+  stopped: boolean;
   tokens: number | null;
 };
 
