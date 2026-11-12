@@ -349,3 +349,17 @@ A review pass over the last two weeks of changes found real bugs:
 - In `npm run compare`, an agent that stopped on its own error counted as a failed task. It is now marked as crashed.
 
 20 tests pass.
+
+### Demo scenes again, November 12
+
+Recorded every demo scene again with the current build, so the screenshots match what the agent does now. Each run used a fresh copy of the fixture in `sandbox/demo-app`.
+
+- Fallback: a second gateway with an invalid Groq key, in its own app directory so the real databases stayed untouched. Task 01 went to gemini-3.5-flash-lite and passed, 1,190 tokens. One earlier try fell all the way to local qwen, which sent `write_files` arguments as a JSON array. The agent told the model the arguments were invalid but left them in the history, and the gateway refused the next request with a 400. Broken arguments are now replaced with `{}` in the history.
+- Budget: set the `thrift-dev` budget just above its current spend, ran task 03 to use it up, then task 08 got its first step and a 402 on the second. The budget went back to $2.00 right after.
+- Private: qwen2.5-coder:7b once printed the `write_file` call as text and left off the last closing brace, so the agent took it for a final answer and wrote nothing. The text parser now closes open braces and tries again. Another private run rewrote the protected pagination test along with the fix; we used task 04 for the scene instead.
+- Approval: add and commit approved, push declined, the remote kept its starting commit.
+- Tavily: task 17 with the check on took 5 steps and 19,958 tokens. The extractor picked three claims about Express 5, and the judge called "same route syntax as Express 4" current, which is wrong for wildcards, so the check did not help here. `npm run check` on an answer with five stale claims flagged three of them as outdated with sources (Node 18 LTS, Heroku free dynos, Zod `error.errors`). The extractor did not pick up the other two, Create React App and `ReactDOM.render`.
+
+The dashboard had three bugs that only showed in these scenes. On a fallback it priced the step with the log of the failed first attempt, which has no cost, instead of the attempt that answered. The CLI posted events without waiting, so a tool call could arrive before its step and show under the previous one; events are now sent in order and the dashboard sorts them by time. A run stopped by a declined command was listed as done.
+
+The CLI no longer prints the raw JSON of a write before its diff, only the file names, and `npm run check` colors its verdicts. 21 tests pass.

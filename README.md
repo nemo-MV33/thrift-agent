@@ -192,14 +192,14 @@ Settled verdicts and claim lists are cached in `.thrift/freshness-cache.json` fo
 
 ## Demo scenarios
 
-Each scene below was recorded on the live dashboard. The numbers are from those single runs, not averages.
+Each scene below was recorded on the live dashboard on November 12, with the current build. The numbers are from those single runs, not averages.
 
 | Scene | What happened |
 |---|---|
-| Fallback | Task 01 (percent coupon). Groq failed on step 1, so Bifrost answered with gemini-3.5-flash-lite. The agent pinned that model for step 2, which wrote the fix. 2,709 tokens, $0.00097, 2 steps |
-| Budget | A run on the booking ranges task with a tiny budget on the virtual key. Step 1 went through on gpt-oss-120b, step 2 got a 402 "Budget exceeded" from the gateway and the agent stopped cleanly |
-| Private | Task 02 (pagination) with `--private`. One step on qwen2.5-coder:7b through the `thrift-private` key, 973 tokens, $0 |
-| Approval | The task asked for `git add`, `git commit` and `git push origin main`. Each command waited for a yes or no. With push approved the run took 4 steps and 3,984 tokens. With push denied the agent stopped at that point (3 steps, 2,874 tokens, $0.00023) |
+| Fallback | Task 01 (percent coupon), with the gateway started on an invalid Groq key. Groq failed, Bifrost answered with gemini-3.5-flash-lite, the CLI said so, and that answer wrote the fix. 1,190 tokens, $0.00080, 1 step |
+| Budget | The booking ranges task with the virtual key's budget set just above what it had spent. Step 1 went through on gpt-oss-120b, step 2 got a 402 "Budget exceeded" from the gateway and the agent stopped before any further call. 2,199 tokens, $0.00085 |
+| Private | Task 04 (slugify) with `--private`. One step on qwen2.5-coder:7b through the `thrift-private` key, tests passed. 865 tokens, $0, 5.6 s |
+| Approval | The task asked for `git add`, `git commit` and `git push origin main`, one at a time. Each command waited for a yes or no. Add and commit were approved, push was declined, and the agent stopped there. The local test remote kept only its starting commit. 3 steps, 2,940 tokens, $0.00025. An earlier run with push approved took 4 steps and 3,984 tokens |
 
 <p align="center">
   <img src="docs/demo/fallback.png" alt="Fallback to Gemini, then pinned model" width="420" />
@@ -210,7 +210,7 @@ Each scene below was recorded on the live dashboard. The numbers are from those 
   <img src="docs/demo/approval.png" alt="Approval prompt for shell commands" width="420" />
 </p>
 
-The terminal output of both approval runs is in `docs/demo/approval-approve.txt` and `docs/demo/approval-deny.txt`.
+The terminal output of the declined run is in `docs/demo/approval-deny.txt`, and of the earlier approved run in `docs/demo/approval-approve.txt`.
 
 ## Architecture
 
@@ -297,7 +297,7 @@ After moving the Thrift checkout, `scripts/gateway.sh --config-only` rewrites th
 npm test --prefix agent
 ```
 
-The unit tests cover the approval rule, retry delays, the private marker, saved sessions, history trimming, the quote check and parallel cache writes. The CLI tests start the real agent against a small mock gateway and check the fallback notice, the retry after a 503, save and resume, the 402 stop, private mode on a marked repo, a declined write, `write_files` and broken tool arguments. They need no API keys.
+The unit tests cover the approval rule, retry delays, the private marker, saved sessions, history trimming, the quote check and parallel cache writes. The CLI tests start the real agent against a small mock gateway and check the fallback notice, the retry after a 503, save and resume, the 402 stop, private mode on a marked repo, a declined write, `write_files`, broken tool arguments and a tool call that a local model printed as text with its last brace missing. They need no API keys.
 
 ### Environment
 
