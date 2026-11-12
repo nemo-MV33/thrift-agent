@@ -69,7 +69,8 @@ if (asJson) {
 } else if (!claims.length) {
   console.log("No time-sensitive claims found in this answer.");
 } else {
-  const label = { current: "CURRENT ", outdated: "OUTDATED", unknown: "UNKNOWN " } as const;
+  const paint = (code: number, s: string) => (process.stdout.isTTY ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const label = { current: paint(32, "CURRENT "), outdated: paint(31, "OUTDATED"), unknown: paint(33, "UNKNOWN ") } as const;
   for (const v of report.verdicts) {
     console.log(`${label[v.status]}  score ${v.freshness.toFixed(1)}  ${v.library}: ${v.claim}`);
     if (v.correction) console.log(`          now: ${v.correction}`);

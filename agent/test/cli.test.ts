@@ -151,5 +151,19 @@ test("broken tool arguments go back to the model instead of crashing", async () 
     assert.equal(code, 0);
     assert.match(out, /tests pass after the edit, done/);
     assert.match(JSON.stringify(gw.chats()[1].body.messages), /not a valid JSON object/);
+    // The gateway refuses a history with unparsable arguments, so none may go back.
+    for (const m of gw.chats()[1].body.messages) for (const c of m.tool_calls ?? []) assert.doesNotThrow(() => JSON.parse(c.function.arguments));
+  });
+});
+
+test("a tool call printed as text with a missing closing brace still runs", async () => {
+  const text = '{"name": "ws-write_file", "arguments": {"path": "src/cart.js", "content": "export function f() {\\n  return 2;\\n}"}';
+  const gw = new MockGateway([{ message: { role: "assistant", content: text } }], passingTests);
+  await withGateway(gw, async () => {
+    const dir = await repo();
+    const { code, out } = await runCli(["fix it", "--yes", "--no-fresh"], { BIFROST_URL: gw.url, THRIFT_WORKSPACE: dir, THRIFT_SESSION_FILE: path.join(dir, "s.json") });
+    assert.equal(code, 0);
+    assert.match(out, /tests pass after the edit, done/);
+    assert.ok(gw.tools().some((r) => r.body.function.name === "ws-write_file"));
   });
 });

@@ -82,13 +82,19 @@ if (process.env.THRIFT_CACHE_KEY) headers["x-bf-cache-key"] = process.env.THRIFT
 const EVENTS = process.env.THRIFT_EVENTS_URL ?? "http://127.0.0.1:5199/events";
 const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const mode = isPrivate ? "private" : naive ? "naive" : "thrift";
+// Events are posted one after another, so the dashboard sees a step before
+// the tool calls that belong to it.
+let posting: Promise<unknown> = Promise.resolve();
 function emit(type: string, data: Record<string, unknown> = {}) {
-  fetch(EVENTS, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ runId, type, mode, at: Date.now(), ...data }),
-    signal: AbortSignal.timeout(type === "run_end" ? 3000 : 1000),
-  }).catch(() => {});
+  const body = JSON.stringify({ runId, type, mode, at: Date.now(), ...data });
+  posting = posting.then(() =>
+    fetch(EVENTS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(type === "run_end" ? 3000 : 1000),
+    }).catch(() => {}),
+  );
 }
 
 const rl = createInterface({ input: stdin, output: stdout });
@@ -330,16 +336,21 @@ function toolCallsFromText(content: string | null, step: number): ToolCall[] {
         break;
       }
     }
-    if (end === -1) break;
+    // Small models sometimes drop the final closing brace. Close what is open
+    // and try that once, at the end of the text.
+    const text = end === -1 ? (inStr ? null : content.slice(i).trimEnd() + "}".repeat(depth)) : content.slice(i, end + 1);
+    if (text === null) break;
     try {
-      const obj = JSON.parse(content.slice(i, end + 1));
+      const obj = JSON.parse(text);
       if (typeof obj.name === "string" && obj.arguments && typeof obj.arguments === "object") {
         const name = obj.name.includes("-") ? obj.name : `ws-${obj.name}`;
         out.push({ id: `text-${step}-${out.length}`, type: "function", function: { name, arguments: JSON.stringify(obj.arguments) } });
+        if (end === -1) break;
         i = end + 1;
         continue;
       }
     } catch {}
+    if (end === -1) break;
     i++;
   }
   return out;
@@ -417,11 +428,16 @@ for (let step = firstStep; step < firstStep + 15 && !stopped; step++) {
   let editedNow = false;
   for (const call of calls) {
     const toolName = call.function.name.replace(/^[^-]+-/, "");
-    console.log(gray(`  tool ${toolName} ${call.function.arguments}`));
     emit("tool", { step, tool: toolName, args: call.function.arguments.slice(0, 300) });
     const input = parseArgs(call);
+    // A write prints its diff below, so name the files instead of dumping the JSON.
+    const files = input && writesOf(toolName, input);
+    console.log(gray(`  tool ${toolName} ${files ? files.map((f) => f.path).join(", ") : call.function.arguments}`));
     if (!input) {
-      // Tell the model instead of crashing; it usually resends the call whole.
+      // The gateway rejects a history with unparsable arguments, so keep an
+      // empty object there. Tell the model instead of crashing; it usually
+      // resends the call whole.
+      call.function.arguments = "{}";
       messages.push({ role: "tool", tool_call_id: call.id, content: "error: the arguments were not a valid JSON object, nothing was run" });
       continue;
     }
